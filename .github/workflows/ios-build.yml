@@ -1,0 +1,39 @@
+# Compila l'app su un runner macOS e pubblica una .ipa NON firmata
+# come artifact. Da Windows si installa poi sull'iPhone con Sideloadly
+# (che firma con il tuo Apple ID gratuito).
+name: iOS build (IPA non firmata)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compila (senza firma)
+        run: |
+          xcodebuild \
+            -project RoyalRelvot.xcodeproj \
+            -target RoyalRelvot \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Impacchetta la .ipa
+        run: |
+          mkdir Payload
+          cp -R "build/Release-iphoneos/RoyalRelvot.app" Payload/
+          zip -qry RoyalRelvot.ipa Payload
+
+      - name: Pubblica artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RoyalRelvot-ipa
+          path: RoyalRelvot.ipa
+          retention-days: 30
