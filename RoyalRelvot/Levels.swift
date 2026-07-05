@@ -62,8 +62,8 @@ struct LevelDefinition {
 
         let length: CGFloat = 2000 + CGFloat(i) * 160
         let timeLimit: TimeInterval = min(150 + Double(i) * 12, 330)
-        let power: CGFloat = 1 + CGFloat(i - 1) * 0.10
-        let gateHP: CGFloat = 1200 + CGFloat(i - 1) * 450
+        let power: CGFloat = 1 + CGFloat(i - 1) * 0.12
+        let gateHP: CGFloat = 1300 + CGFloat(i - 1) * 520
 
         // Torri: numero crescente, tipi pescati tra quelli già introdotti.
         let towerKinds = TowerKind.available(at: i)

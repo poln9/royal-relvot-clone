@@ -49,17 +49,6 @@ final class GameScene: SKScene {
     /// Punto di evocazione delle truppe: l'accampamento del giocatore.
     private let campPosition = CGPoint(x: 0, y: 40)
 
-    private let formationOffsets: [CGPoint] = [
-        CGPoint(x: -45, y: -35), CGPoint(x: 45, y: -35),
-        CGPoint(x: -70, y: 10),  CGPoint(x: 70, y: 10),
-        CGPoint(x: -45, y: -80), CGPoint(x: 45, y: -80),
-        CGPoint(x: 0, y: -100),  CGPoint(x: 0, y: 60),
-        CGPoint(x: -90, y: -55), CGPoint(x: 90, y: -55),
-        CGPoint(x: -20, y: -130), CGPoint(x: 20, y: 90),
-        CGPoint(x: -60, y: -110), CGPoint(x: 60, y: -110),
-        CGPoint(x: -100, y: 30), CGPoint(x: 100, y: 30),
-    ]
-
     /// Parametri di un colpo, catturati al momento dell'attacco così che
     /// il danno resti valido anche se l'attaccante muore nel frattempo.
     private struct HitPayload {
@@ -280,7 +269,6 @@ final class GameScene: SKScene {
         }
         if isGameOver { return } // il veleno può uccidere l'eroe
 
-        var troopSlot = 0
         for unit in units where unit.isAlive {
             unit.attackCooldown = max(0, unit.attackCooldown - dt)
             switch unit.team {
@@ -290,11 +278,10 @@ final class GameScene: SKScene {
                 if unit === hero {
                     updateFighter(unit, fallback: moveTarget, dt: dt)
                 } else {
-                    let offset = formationOffsets[troopSlot % formationOffsets.count]
-                    troopSlot += 1
-                    let formation = CGPoint(x: hero.position.x + offset.x,
-                                            y: hero.position.y + offset.y)
-                    updateFighter(unit, fallback: formation, dt: dt)
+                    // Le truppe avanzano da sole lungo la propria corsia
+                    // verso il portone, ingaggiando ciò che incontrano.
+                    let advance = CGPoint(x: unit.position.x, y: level.length)
+                    updateFighter(unit, fallback: advance, dt: dt)
                 }
             }
         }

@@ -37,8 +37,8 @@ struct Progression: Codable {
     /// Frazione di vita massima ripristinata dalla cura.
     var healFraction: CGFloat { min(0.35 + 0.03 * CGFloat(spellLevel), 0.8) }
     var elixirMax: CGFloat { CGFloat(6 + elixirMaxLevel) }
-    /// Elisir rigenerato al secondo.
-    var elixirRate: CGFloat { 0.5 * (1 + 0.08 * CGFloat(elixirRateLevel)) }
+    /// Elisir rigenerato al secondo (~1 ogni 3 secondi alla base).
+    var elixirRate: CGFloat { 0.34 * (1 + 0.08 * CGFloat(elixirRateLevel)) }
 
     func level(of kind: UpgradeKind) -> Int {
         switch kind {
