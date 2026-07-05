@@ -4,13 +4,19 @@ Clone didattico per iOS ispirato alle meccaniche di *Royal Revolt* (tower-defens
 guidi il Re lungo il sentiero, evochi truppe, lanci incantesimi e abbatti il portone
 del castello nemico prima che scada il tempo.
 
-Tutti gli asset sono originali (emoji + grafica procedurale): nessun contenuto
-protetto da copyright del gioco originale.
+Grafica: sprite pixel-art **CC0** dai pack [Tiny Dungeon](https://kenney.nl/assets/tiny-dungeon)
+e [Tiny Town](https://kenney.nl/assets/tiny-town) di **Kenney.nl** (dominio pubblico,
+nessuna attribuzione richiesta — ma la merita), con fallback automatico a emoji
+per le unità senza sprite. Nessun contenuto protetto da copyright del gioco originale.
 
 - **Stack:** Swift 5 · SwiftUI (menu/HUD) · SpriteKit (gameplay)
 - **Target:** iPhone (portrait), iOS 17+ — ottimizzato per iPhone 15 Plus (430×932 pt)
 - **Dipendenze esterne:** nessuna
 - **Contenuti:** 20 livelli · 12 truppe evocabili · 7 nemici · 6 tipi di torre · barricate
+- **Sistemi:** elisir (6→20, rigenerazione potenziabile) · oro e potenziamenti
+  permanenti · danno per genere (taglio/perforante/esplosivo/magico) con
+  vulnerabilità e resistenze · accampamenti (le truppe partono dal tuo,
+  il nemico manda rinforzi dal suo dal livello 4)
 
 ## Come eseguirlo su iPhone 15 Plus
 

@@ -224,7 +224,7 @@ final class Unit: SKNode {
     }
 
     static func barricade(power: CGFloat) -> Unit {
-        Unit(team: .enemy, kind: .barricade, emoji: "🪵🪵🪵", spriteName: "barricade", size: 34,
+        Unit(team: .enemy, kind: .barricade, emoji: "🪵🪵🪵", spriteName: "barricade", size: 88,
              hp: 350 * power, damage: 0,
              vulnerabilities: [.esplosivo], resistances: [.perforante],
              attackRange: 0, aggroRange: 0,

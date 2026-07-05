@@ -76,7 +76,8 @@ final class GameScene: SKScene {
         self.elixir = config.elixirMax
         super.init(size: CGSize(width: 430, height: 932))
         scaleMode = .aspectFill
-        backgroundColor = SKColor(red: 0.24, green: 0.55, blue: 0.30, alpha: 1)
+        // Verde erba della palette Kenney (Tiny Town).
+        backgroundColor = SKColor(red: 132 / 255, green: 198 / 255, blue: 105 / 255, alpha: 1)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) non supportato") }
@@ -92,18 +93,32 @@ final class GameScene: SKScene {
     }
 
     private func buildWorld() {
-        // Sentiero di terra battuta al centro, erba tutto intorno.
-        let path = SKSpriteNode(color: SKColor(red: 0.76, green: 0.64, blue: 0.42, alpha: 1),
+        // Sentiero di sabbia al centro (colore base delle tile Kenney),
+        // erba tutto intorno.
+        let path = SKSpriteNode(color: SKColor(red: 234 / 255, green: 165 / 255, blue: 108 / 255, alpha: 1),
                                 size: CGSize(width: pathHalfWidth * 2, height: level.length + 500))
         path.position = CGPoint(x: 0, y: level.length / 2)
         path.zPosition = 1
         addChild(path)
 
-        // Decorazioni ai lati del sentiero.
-        let decoEmoji = ["🌲", "🌳", "🪨", "🌲"]
+        // Dettagli di sabbia sul sentiero (si fondono col colore base).
+        for _ in 0..<Int(level.length / 180) {
+            let sand = decoNode(sprite: Bool.random() ? "deco_sand1" : "deco_sand2",
+                                emoji: "", size: 40)
+            sand.position = CGPoint(x: CGFloat.random(in: -110...110),
+                                    y: CGFloat.random(in: 0...level.length))
+            sand.zPosition = 1.5
+            addChild(sand)
+        }
+
+        // Alberi e funghi ai lati del sentiero.
+        let decoSprites = ["deco_tree1", "deco_tree2", "deco_tree3",
+                           "deco_tree4", "deco_mushroom"]
+        let decoEmoji = ["🌲", "🌳", "🌳", "🌲", "🍄"]
         for i in 0..<40 {
-            let deco = SKLabelNode(text: decoEmoji[i % decoEmoji.count])
-            deco.fontSize = CGFloat.random(in: 26...40)
+            let pick = i % decoSprites.count
+            let deco = decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
+                                size: CGFloat.random(in: 28...44))
             let side: CGFloat = Bool.random() ? -1 : 1
             deco.position = CGPoint(x: side * CGFloat.random(in: 175...270),
                                     y: CGFloat.random(in: -100...(level.length + 100)))
@@ -186,6 +201,21 @@ final class GameScene: SKScene {
     private func add(_ unit: Unit) {
         units.append(unit)
         addChild(unit)
+    }
+
+    /// Nodo decorativo: sprite se disponibile nel bundle, altrimenti emoji.
+    private func decoNode(sprite: String, emoji: String, size: CGFloat) -> SKNode {
+        if UIImage(named: sprite) != nil {
+            let texture = SKTexture(imageNamed: sprite)
+            texture.filteringMode = .nearest
+            let node = SKSpriteNode(texture: texture)
+            let maxSide = max(texture.size().width, texture.size().height)
+            if maxSide > 0 { node.setScale(size * 1.5 / maxSide) }
+            return node
+        }
+        let label = SKLabelNode(text: emoji)
+        label.fontSize = size
+        return label
     }
 
     // MARK: - Input
