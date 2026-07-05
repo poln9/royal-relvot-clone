@@ -7,16 +7,37 @@ enum Team {
 
 enum UnitKind {
     case hero
-    case knight
-    case goblin
-    case brute
+    case troop
+    case foe
     case tower
+    case barricade
     case gate
 }
 
-/// Unità di gioco generica: eroe, truppe, nemici, torri e portone
-/// condividono lo stesso modello (HP, danno, gittata, velocità).
-/// Le strutture statiche (torri, portone) hanno moveSpeed == 0.
+/// Tratti speciali di combattimento di un'unità.
+struct CombatTraits {
+    /// 0 = attacco in mischia, > 0 = velocità del proiettile.
+    var projectileSpeed: CGFloat = 0
+    /// Raggio del danno ad area all'impatto (0 = bersaglio singolo).
+    var splashRadius: CGFloat = 0
+    /// Fattore di rallentamento applicato al bersaglio (0 = nessuno, 0.5 = metà velocità).
+    var slowFactor: CGFloat = 0
+    var slowDuration: TimeInterval = 0
+    /// Danno da veleno al secondo applicato al bersaglio (0 = nessuno).
+    var poisonDPS: CGFloat = 0
+    var poisonDuration: TimeInterval = 0
+    /// Esplode al primo attacco, danneggiando l'area e morendo.
+    var kamikaze: Bool = false
+    /// Invece di attaccare cura l'alleato più ferito (damage = cura per colpo).
+    var healer: Bool = false
+    /// Ignora le barricate.
+    var flying: Bool = false
+    /// Moltiplicatore di danno contro strutture (torri, barricate, portone).
+    var structureDamageMultiplier: CGFloat = 1
+}
+
+/// Unità di gioco generica: eroe, truppe, nemici, torri, barricate e portone
+/// condividono lo stesso modello. Le strutture hanno moveSpeed == 0.
 final class Unit: SKNode {
     let team: Team
     let kind: UnitKind
@@ -27,14 +48,22 @@ final class Unit: SKNode {
     let aggroRange: CGFloat
     let moveSpeed: CGFloat
     let attackInterval: TimeInterval
-    /// 0 = attacco in mischia, > 0 = velocità del proiettile
-    let projectileSpeed: CGFloat
+    let traits: CombatTraits
 
     var attackCooldown: TimeInterval = 0
+
+    // Stato alterato (gestito dalla scena).
+    var slowRemaining: TimeInterval = 0
+    var slowFactor: CGFloat = 1
+    var poisonRemaining: TimeInterval = 0
+    var poisonDPS: CGFloat = 0
+
     var isStatic: Bool { moveSpeed == 0 }
     var isAlive: Bool { hp > 0 }
+    var currentSpeed: CGFloat { slowRemaining > 0 ? moveSpeed * slowFactor : moveSpeed }
 
     private let body = SKLabelNode()
+    private let statusLabel = SKLabelNode()
     private let barBack: SKSpriteNode
     private let barFill: SKSpriteNode
     private let barWidth: CGFloat
@@ -42,6 +71,7 @@ final class Unit: SKNode {
     init(team: Team,
          kind: UnitKind,
          emoji: String,
+         badge: String? = nil,
          size: CGFloat,
          hp: CGFloat,
          damage: CGFloat,
@@ -49,7 +79,7 @@ final class Unit: SKNode {
          aggroRange: CGFloat,
          moveSpeed: CGFloat,
          attackInterval: TimeInterval,
-         projectileSpeed: CGFloat = 0,
+         traits: CombatTraits = CombatTraits(),
          barWidth: CGFloat = 40) {
         self.team = team
         self.kind = kind
@@ -60,7 +90,7 @@ final class Unit: SKNode {
         self.aggroRange = aggroRange
         self.moveSpeed = moveSpeed
         self.attackInterval = attackInterval
-        self.projectileSpeed = projectileSpeed
+        self.traits = traits
         self.barWidth = barWidth
         self.barBack = SKSpriteNode(color: SKColor(white: 0, alpha: 0.55),
                                     size: CGSize(width: barWidth, height: 6))
@@ -74,12 +104,26 @@ final class Unit: SKNode {
         body.horizontalAlignmentMode = .center
         addChild(body)
 
+        if let badge {
+            let badgeLabel = SKLabelNode(text: badge)
+            badgeLabel.fontSize = 17
+            badgeLabel.verticalAlignmentMode = .center
+            badgeLabel.position = CGPoint(x: size * 0.38, y: size * 0.5)
+            badgeLabel.zPosition = 1
+            addChild(badgeLabel)
+        }
+
         let barY = size * 0.78
         barBack.position = CGPoint(x: 0, y: barY)
         addChild(barBack)
         barFill.anchorPoint = CGPoint(x: 0, y: 0.5)
         barFill.position = CGPoint(x: -(barWidth - 2) / 2, y: barY)
         addChild(barFill)
+
+        statusLabel.fontSize = 13
+        statusLabel.verticalAlignmentMode = .center
+        statusLabel.position = CGPoint(x: 0, y: barY + 11)
+        addChild(statusLabel)
 
         zPosition = 10
     }
@@ -88,13 +132,15 @@ final class Unit: SKNode {
 
     /// Applica danno; ritorna true se l'unità è morta con questo colpo.
     @discardableResult
-    func applyDamage(_ amount: CGFloat) -> Bool {
+    func applyDamage(_ amount: CGFloat, flash: Bool = true) -> Bool {
         guard isAlive else { return false }
         hp = max(0, hp - amount)
         refreshBar()
-        body.removeAction(forKey: "hit")
-        body.run(.sequence([.scale(to: 1.2, duration: 0.06),
-                            .scale(to: 1.0, duration: 0.08)]), withKey: "hit")
+        if flash {
+            body.removeAction(forKey: "hit")
+            body.run(.sequence([.scale(to: 1.2, duration: 0.06),
+                                .scale(to: 1.0, duration: 0.08)]), withKey: "hit")
+        }
         return hp == 0
     }
 
@@ -102,6 +148,13 @@ final class Unit: SKNode {
         guard isAlive else { return }
         hp = min(maxHP, hp + amount)
         refreshBar()
+    }
+
+    func refreshStatusIcon() {
+        var icons = ""
+        if slowRemaining > 0 { icons += "❄️" }
+        if poisonRemaining > 0 { icons += "☠️" }
+        statusLabel.text = icons
     }
 
     private func refreshBar() {
@@ -119,7 +172,7 @@ final class Unit: SKNode {
                             .moveBy(x: -offset.x, y: -offset.y, duration: 0.1)]), withKey: "lunge")
     }
 
-    // MARK: - Factory
+    // MARK: - Factory delle unità speciali
 
     static func hero() -> Unit {
         Unit(team: .player, kind: .hero, emoji: "🤴", size: 44,
@@ -127,36 +180,16 @@ final class Unit: SKNode {
              moveSpeed: 270, attackInterval: 0.55, barWidth: 46)
     }
 
-    static func knight() -> Unit {
-        Unit(team: .player, kind: .knight, emoji: "⚔️", size: 32,
-             hp: 160, damage: 13, attackRange: 50, aggroRange: 150,
-             moveSpeed: 250, attackInterval: 0.7, barWidth: 34)
-    }
-
-    /// Le pattuglie usano l'aggro di default (ingaggiano solo da vicino);
-    /// i rinforzi dal portone ricevono un aggro enorme per caricare l'eroe.
-    static func goblin(power: CGFloat, aggro: CGFloat = 280) -> Unit {
-        Unit(team: .enemy, kind: .goblin, emoji: "👹", size: 34,
-             hp: 70 * power, damage: 9 * power, attackRange: 45, aggroRange: aggro,
-             moveSpeed: 150, attackInterval: 0.8, barWidth: 36)
-    }
-
-    static func brute(power: CGFloat) -> Unit {
-        Unit(team: .enemy, kind: .brute, emoji: "👺", size: 44,
-             hp: 250 * power, damage: 21 * power, attackRange: 50, aggroRange: 300,
-             moveSpeed: 110, attackInterval: 1.0, barWidth: 44)
-    }
-
-    static func tower(power: CGFloat) -> Unit {
-        Unit(team: .enemy, kind: .tower, emoji: "🗼", size: 54,
-             hp: 260 * power, damage: 16 * power, attackRange: 250, aggroRange: 250,
-             moveSpeed: 0, attackInterval: 1.15, projectileSpeed: 420, barWidth: 52)
-    }
-
     static func gate(hp: CGFloat) -> Unit {
         Unit(team: .enemy, kind: .gate, emoji: "🏰", size: 92,
              hp: hp, damage: 0, attackRange: 0, aggroRange: 0,
              moveSpeed: 0, attackInterval: 10, barWidth: 130)
+    }
+
+    static func barricade(power: CGFloat) -> Unit {
+        Unit(team: .enemy, kind: .barricade, emoji: "🪵🪵🪵", size: 34,
+             hp: 380 * power, damage: 0, attackRange: 0, aggroRange: 0,
+             moveSpeed: 0, attackInterval: 10, barWidth: 110)
     }
 }
 

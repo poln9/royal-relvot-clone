@@ -9,14 +9,16 @@ struct HUDState {
     /// Frazione di cooldown residuo (0 = pronto, 1 = appena lanciato).
     var fireballCD: CGFloat = 0
     var healCD: CGFloat = 0
-    var summonCD: CGFloat = 0
+    /// Cooldown degli slot di evocazione (uno per truppa del loadout).
+    var slotCDs: [CGFloat] = []
 }
 
 /// Scena principale: il Re avanza lungo il sentiero verticale verso il
-/// portone nemico. Tap per muoversi, pulsanti SwiftUI per gli incantesimi.
+/// portone nemico. Tap per muoversi, pulsanti SwiftUI per spell e truppe.
 final class GameScene: SKScene {
 
     let level: LevelDefinition
+    let loadout: [PlayerTroop]
     var onHUDUpdate: ((HUDState) -> Void)?
     var onGameOver: ((Bool) -> Void)?
 
@@ -30,28 +32,40 @@ final class GameScene: SKScene {
     private var elapsed: TimeInterval = 0
     private var spawnAccumulator: TimeInterval = 0
     private var hudAccumulator: TimeInterval = 0
+    private var raiderIndex = 0
     private var isGameOver = false
 
     private var fireballReadyAt: TimeInterval = 0
     private var healReadyAt: TimeInterval = 0
-    private var summonReadyAt: TimeInterval = 0
+    private var slotReadyAt: [TimeInterval]
     private let fireballCooldown: TimeInterval = 8
     private let healCooldown: TimeInterval = 15
-    private let summonCooldown: TimeInterval = 10
 
     private let pathHalfWidth: CGFloat = 150
-    private let maxAllies = 8
-    private let maxRaiders = 12
+    private let maxAllies = 12
+    private let maxRaiders = 14
 
     private let formationOffsets: [CGPoint] = [
         CGPoint(x: -45, y: -35), CGPoint(x: 45, y: -35),
         CGPoint(x: -70, y: 10),  CGPoint(x: 70, y: 10),
         CGPoint(x: -45, y: -80), CGPoint(x: 45, y: -80),
         CGPoint(x: 0, y: -100),  CGPoint(x: 0, y: 60),
+        CGPoint(x: -90, y: -55), CGPoint(x: 90, y: -55),
+        CGPoint(x: -20, y: -130), CGPoint(x: 20, y: 90),
     ]
 
-    init(level: LevelDefinition) {
+    /// Parametri di un colpo, catturati al momento dell'attacco così che
+    /// il danno resti valido anche se l'attaccante muore nel frattempo.
+    private struct HitPayload {
+        let team: Team
+        let damage: CGFloat
+        let traits: CombatTraits
+    }
+
+    init(level: LevelDefinition, loadout: [PlayerTroop]) {
         self.level = level
+        self.loadout = loadout
+        self.slotReadyAt = Array(repeating: 0, count: loadout.count)
         super.init(size: CGSize(width: 430, height: 932))
         scaleMode = .aspectFill
         backgroundColor = SKColor(red: 0.24, green: 0.55, blue: 0.30, alpha: 1)
@@ -79,7 +93,7 @@ final class GameScene: SKScene {
 
         // Decorazioni ai lati del sentiero.
         let decoEmoji = ["🌲", "🌳", "🪨", "🌲"]
-        for i in 0..<36 {
+        for i in 0..<40 {
             let deco = SKLabelNode(text: decoEmoji[i % decoEmoji.count])
             deco.fontSize = CGFloat.random(in: 26...40)
             let side: CGFloat = Bool.random() ? -1 : 1
@@ -110,25 +124,28 @@ final class GameScene: SKScene {
         gate.position = CGPoint(x: 0, y: level.length)
         add(gate)
 
-        // Torri difensive, lato alternato.
-        for (i, y) in level.towerYs.enumerated() {
-            let tower = Unit.tower(power: level.enemyPower)
-            let side: CGFloat = i % 2 == 0 ? -1 : 1
-            tower.position = CGPoint(x: side * 125, y: y)
+        // Torri difensive.
+        for spec in level.towers {
+            let tower = spec.kind.makeUnit(power: level.enemyPower)
+            tower.position = CGPoint(x: spec.side * 125, y: spec.y)
             add(tower)
         }
 
-        // Pattuglie di guardia lungo il sentiero.
-        for y in level.patrolYs {
-            for x in [CGFloat(-45), CGFloat(45)] {
-                let goblin = Unit.goblin(power: level.enemyPower)
-                goblin.position = CGPoint(x: x, y: y)
-                add(goblin)
-            }
-            if level.includeBrutes {
-                let brute = Unit.brute(power: level.enemyPower)
-                brute.position = CGPoint(x: 0, y: y + 40)
-                add(brute)
+        // Barricate che sbarrano il sentiero.
+        for y in level.barricadeYs {
+            let barricade = Unit.barricade(power: level.enemyPower)
+            barricade.position = CGPoint(x: 0, y: y)
+            add(barricade)
+        }
+
+        // Pattuglie di guardia.
+        let xs: [CGFloat] = [-50, 50, 0, -90, 90, -20]
+        for spec in level.patrols {
+            for (k, foe) in spec.foes.enumerated() {
+                let unit = foe.makeUnit(power: level.enemyPower)
+                unit.position = CGPoint(x: xs[k % xs.count],
+                                        y: spec.y + CGFloat(k / 3) * 46)
+                add(unit)
             }
         }
 
@@ -138,7 +155,7 @@ final class GameScene: SKScene {
         hero.zPosition = 11
         add(hero)
         for x in [CGFloat(-50), CGFloat(50)] {
-            let knight = Unit.knight()
+            let knight = PlayerTroop.cavaliere.makeUnit()
             knight.position = CGPoint(x: x, y: 40)
             add(knight)
         }
@@ -200,7 +217,13 @@ final class GameScene: SKScene {
             spawnRaider()
         }
 
-        var knightSlot = 0
+        // Stati alterati (gelo, veleno).
+        for unit in units where unit.isAlive {
+            tickStatusEffects(unit, dt: dt)
+        }
+        if isGameOver { return } // il veleno può uccidere l'eroe
+
+        var troopSlot = 0
         for unit in units where unit.isAlive {
             unit.attackCooldown = max(0, unit.attackCooldown - dt)
             switch unit.team {
@@ -210,11 +233,10 @@ final class GameScene: SKScene {
                 if unit === hero {
                     updateFighter(unit, fallback: moveTarget, dt: dt)
                 } else {
-                    let slot = knightSlot
-                    knightSlot += 1
-                    let formation = CGPoint(
-                        x: hero.position.x + formationOffsets[slot % formationOffsets.count].x,
-                        y: hero.position.y + formationOffsets[slot % formationOffsets.count].y)
+                    let offset = formationOffsets[troopSlot % formationOffsets.count]
+                    troopSlot += 1
+                    let formation = CGPoint(x: hero.position.x + offset.x,
+                                            y: hero.position.y + offset.y)
                     updateFighter(unit, fallback: formation, dt: dt)
                 }
             }
@@ -229,8 +251,27 @@ final class GameScene: SKScene {
         }
     }
 
+    private func tickStatusEffects(_ unit: Unit, dt: TimeInterval) {
+        if unit.slowRemaining > 0 {
+            unit.slowRemaining -= dt
+            if unit.slowRemaining <= 0 {
+                unit.slowRemaining = 0
+                unit.refreshStatusIcon()
+            }
+        }
+        if unit.poisonRemaining > 0 {
+            unit.poisonRemaining -= dt
+            deal(unit.poisonDPS * CGFloat(dt), to: unit, flash: false)
+            if unit.poisonRemaining <= 0 {
+                unit.poisonRemaining = 0
+                unit.poisonDPS = 0
+                unit.refreshStatusIcon()
+            }
+        }
+    }
+
     private func updateEnemy(_ unit: Unit, dt: TimeInterval) {
-        guard unit.damage > 0 else { return } // il portone non attacca
+        guard unit.damage > 0 else { return } // portone e barricate non attaccano
         guard let target = nearestOpponent(of: unit, within: unit.aggroRange) else { return }
         let d = unit.position.distance(to: target.position)
         if d <= unit.attackRange {
@@ -241,10 +282,35 @@ final class GameScene: SKScene {
     }
 
     private func updateFighter(_ unit: Unit, fallback: CGPoint?, dt: TimeInterval) {
+        if unit.traits.healer {
+            updateHealer(unit, fallback: fallback, dt: dt)
+            return
+        }
         if let target = nearestOpponent(of: unit, within: unit.aggroRange) {
             let d = unit.position.distance(to: target.position)
             if d <= unit.attackRange {
                 if unit.attackCooldown == 0 { performAttack(unit, on: target) }
+            } else {
+                move(unit, toward: target.position, dt: dt)
+            }
+        } else if let dest = fallback, unit.position.distance(to: dest) > 8 {
+            move(unit, toward: dest, dt: dt)
+        }
+    }
+
+    private func updateHealer(_ unit: Unit, fallback: CGPoint?, dt: TimeInterval) {
+        let injured = units
+            .filter { $0.team == unit.team && $0.isAlive && $0 !== unit && $0.hp < $0.maxHP }
+            .min { $0.hp / $0.maxHP < $1.hp / $1.maxHP }
+        if let target = injured,
+           unit.position.distance(to: target.position) <= unit.aggroRange {
+            let d = unit.position.distance(to: target.position)
+            if d <= unit.attackRange {
+                if unit.attackCooldown == 0 {
+                    unit.attackCooldown = unit.attackInterval
+                    target.heal(unit.damage)
+                    showHealSparkle(at: target.position)
+                }
             } else {
                 move(unit, toward: target.position, dt: dt)
             }
@@ -271,49 +337,110 @@ final class GameScene: SKScene {
         let dy = point.y - unit.position.y
         let len = sqrt(dx * dx + dy * dy)
         guard len > 1 else { return }
-        let step = unit.moveSpeed * CGFloat(dt)
+        let step = unit.currentSpeed * CGFloat(dt)
         let nx = unit.position.x + dx / len * min(step, len)
-        let ny = unit.position.y + dy / len * min(step, len)
+        var ny = unit.position.y + dy / len * min(step, len)
+
+        // Le barricate sbarrano la strada alle unità di terra del giocatore.
+        if unit.team == .player && !unit.traits.flying {
+            for barricade in units
+            where barricade.kind == .barricade && barricade.isAlive {
+                let limit = barricade.position.y - 36
+                if unit.position.y <= limit && ny > limit {
+                    ny = limit
+                }
+            }
+        }
+
         unit.position = CGPoint(x: min(max(nx, -pathHalfWidth + 10), pathHalfWidth - 10),
                                 y: min(max(ny, 20), level.length + 20))
     }
 
+    // MARK: - Attacchi
+
     private func performAttack(_ unit: Unit, on target: Unit) {
         unit.attackCooldown = unit.attackInterval
-        if unit.projectileSpeed > 0 {
-            fireProjectile(from: unit, to: target)
+        let payload = HitPayload(team: unit.team, damage: unit.damage, traits: unit.traits)
+
+        if unit.traits.kamikaze {
+            showExplosion(at: unit.position, radius: max(70, unit.traits.splashRadius))
+            applyHitArea(payload, at: unit.position)
+            kill(unit)
+            return
+        }
+        if unit.traits.projectileSpeed > 0 {
+            fireProjectile(payload, from: unit, to: target)
         } else {
             unit.lunge(toward: target.position)
-            deal(unit.damage, to: target)
+            applyHit(payload, to: target)
         }
     }
 
-    private func fireProjectile(from unit: Unit, to target: Unit) {
-        let projectile = SKShapeNode(circleOfRadius: 5)
-        projectile.fillColor = .orange
-        projectile.strokeColor = SKColor(red: 0.6, green: 0.25, blue: 0, alpha: 1)
+    private func fireProjectile(_ payload: HitPayload, from unit: Unit, to target: Unit) {
+        let projectile = SKShapeNode(circleOfRadius: payload.traits.splashRadius > 0 ? 6 : 5)
+        projectile.fillColor = projectileColor(for: payload.traits, team: payload.team)
+        projectile.strokeColor = SKColor(white: 0, alpha: 0.4)
         projectile.position = CGPoint(x: unit.position.x, y: unit.position.y + 24)
         projectile.zPosition = 30
         addChild(projectile)
 
         let destination = target.position
         let duration = TimeInterval(projectile.position.distance(to: destination)
-                                    / unit.projectileSpeed)
-        let damage = unit.damage
+                                    / payload.traits.projectileSpeed)
         projectile.run(.sequence([
             .move(to: destination, duration: duration),
             .run { [weak self, weak target] in
-                guard let self, let target, target.isAlive else { return }
-                if target.position.distance(to: destination) <= 55 {
-                    self.deal(damage, to: target)
+                guard let self else { return }
+                if payload.traits.splashRadius > 0 {
+                    self.applyHitArea(payload, at: destination)
+                } else if let target, target.isAlive,
+                          target.position.distance(to: destination) <= 60 {
+                    self.applyHit(payload, to: target)
                 }
             },
             .removeFromParent(),
         ]))
     }
 
-    private func deal(_ amount: CGFloat, to target: Unit) {
-        guard target.applyDamage(amount) else { return }
+    private func projectileColor(for traits: CombatTraits, team: Team) -> SKColor {
+        if traits.slowFactor > 0 { return SKColor.cyan }
+        if traits.poisonDPS > 0 { return SKColor.green }
+        return team == .enemy ? SKColor.orange : SKColor.yellow
+    }
+
+    private func applyHit(_ payload: HitPayload, to target: Unit) {
+        applyEffects(of: payload.traits, to: target)
+        var damage = payload.damage
+        if target.isStatic { damage *= payload.traits.structureDamageMultiplier }
+        deal(damage, to: target)
+    }
+
+    private func applyHitArea(_ payload: HitPayload, at point: CGPoint) {
+        for other in units where other.isAlive
+            && other.team != payload.team
+            && other.position.distance(to: point) <= payload.traits.splashRadius {
+            applyHit(payload, to: other)
+            if isGameOver { return }
+        }
+    }
+
+    private func applyEffects(of traits: CombatTraits, to target: Unit) {
+        var changed = false
+        if traits.slowFactor > 0 {
+            target.slowFactor = traits.slowFactor
+            target.slowRemaining = traits.slowDuration
+            changed = true
+        }
+        if traits.poisonDPS > 0 {
+            target.poisonDPS = max(target.poisonDPS, traits.poisonDPS)
+            target.poisonRemaining = max(target.poisonRemaining, traits.poisonDuration)
+            changed = true
+        }
+        if changed { target.refreshStatusIcon() }
+    }
+
+    private func deal(_ amount: CGFloat, to target: Unit, flash: Bool = true) {
+        guard target.applyDamage(amount, flash: flash) else { return }
         // Il bersaglio è morto.
         units.removeAll { $0 === target }
         target.run(.sequence([.group([.fadeOut(withDuration: 0.3),
@@ -326,17 +453,24 @@ final class GameScene: SKScene {
         }
     }
 
-    private func spawnRaider() {
-        let raiders = units.filter { $0.team == .enemy && !$0.isStatic && $0.kind != .gate }
-        guard raiders.count < maxRaiders, gate.isAlive else { return }
-        let goblin = Unit.goblin(power: level.enemyPower, aggro: 100_000)
-        goblin.position = CGPoint(x: CGFloat.random(in: -100...100), y: level.length - 90)
-        goblin.alpha = 0
-        add(goblin)
-        goblin.run(.fadeIn(withDuration: 0.3))
+    /// Elimina immediatamente un'unità (usato dai kamikaze).
+    private func kill(_ unit: Unit) {
+        deal(unit.maxHP * 100, to: unit, flash: false)
     }
 
-    // MARK: - Incantesimi (chiamati dal ViewModel)
+    private func spawnRaider() {
+        let raiders = units.filter { $0.team == .enemy && !$0.isStatic }
+        guard raiders.count < maxRaiders, gate.isAlive, !level.raiders.isEmpty else { return }
+        let foe = level.raiders[raiderIndex % level.raiders.count]
+        raiderIndex += 1
+        let unit = foe.makeUnit(power: level.enemyPower, aggro: 100_000)
+        unit.position = CGPoint(x: CGFloat.random(in: -100...100), y: level.length - 90)
+        unit.alpha = 0
+        add(unit)
+        unit.run(.fadeIn(withDuration: 0.3))
+    }
+
+    // MARK: - Spell e evocazioni (chiamate dal ViewModel)
 
     func castFireball() {
         guard !isGameOver, elapsed >= fireballReadyAt else { return }
@@ -371,21 +505,26 @@ final class GameScene: SKScene {
         pushHUD()
     }
 
-    func summonKnights() {
-        guard !isGameOver, elapsed >= summonReadyAt else { return }
-        let allies = units.filter { $0.team == .player && $0 !== hero }
-        guard allies.count < maxAllies else { return }
-        summonReadyAt = elapsed + summonCooldown
-        for _ in 0..<min(3, maxAllies - allies.count) {
-            let knight = Unit.knight()
-            knight.position = CGPoint(x: hero.position.x + CGFloat.random(in: -60...60),
-                                      y: hero.position.y - CGFloat.random(in: 40...80))
-            knight.alpha = 0
-            add(knight)
-            knight.run(.fadeIn(withDuration: 0.25))
+    func summonTroop(slot: Int) {
+        guard !isGameOver,
+              loadout.indices.contains(slot),
+              elapsed >= slotReadyAt[slot] else { return }
+        let allies = units.filter { $0.team == .player && $0 !== hero }.count
+        guard allies < maxAllies else { return }
+        let troop = loadout[slot]
+        slotReadyAt[slot] = elapsed + troop.summonCooldown
+        for _ in 0..<min(troop.squadSize, maxAllies - allies) {
+            let unit = troop.makeUnit()
+            unit.position = CGPoint(x: hero.position.x + CGFloat.random(in: -60...60),
+                                    y: hero.position.y - CGFloat.random(in: 40...80))
+            unit.alpha = 0
+            add(unit)
+            unit.run(.fadeIn(withDuration: 0.25))
         }
         pushHUD()
     }
+
+    // MARK: - Effetti visivi
 
     private func showExplosion(at point: CGPoint, radius: CGFloat) {
         let blast = SKShapeNode(circleOfRadius: radius)
@@ -409,6 +548,17 @@ final class GameScene: SKScene {
                             .removeFromParent()]))
     }
 
+    private func showHealSparkle(at point: CGPoint) {
+        let sparkle = SKLabelNode(text: "✨")
+        sparkle.fontSize = 24
+        sparkle.position = CGPoint(x: point.x, y: point.y + 20)
+        sparkle.zPosition = 40
+        addChild(sparkle)
+        sparkle.run(.sequence([.group([.moveBy(x: 0, y: 24, duration: 0.5),
+                                       .fadeOut(withDuration: 0.5)]),
+                               .removeFromParent()]))
+    }
+
     // MARK: - Camera / HUD / fine partita
 
     private func updateCamera() {
@@ -427,7 +577,9 @@ final class GameScene: SKScene {
         state.allies = units.filter { $0.team == .player && $0 !== hero }.count
         state.fireballCD = CGFloat(max(0, fireballReadyAt - elapsed) / fireballCooldown)
         state.healCD = CGFloat(max(0, healReadyAt - elapsed) / healCooldown)
-        state.summonCD = CGFloat(max(0, summonReadyAt - elapsed) / summonCooldown)
+        state.slotCDs = loadout.indices.map { i in
+            CGFloat(max(0, slotReadyAt[i] - elapsed) / loadout[i].summonCooldown)
+        }
         onHUDUpdate?(state)
     }
 

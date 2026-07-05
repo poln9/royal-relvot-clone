@@ -8,6 +8,11 @@ struct ContentView: View {
         ZStack {
             if viewModel.screen == .menu {
                 MenuView(viewModel: viewModel)
+                if let pending = viewModel.pendingLevel {
+                    LoadoutView(viewModel: viewModel, levelIndex: pending)
+                        .id(pending)
+                        .transition(.move(edge: .bottom))
+                }
             } else {
                 gameLayer
             }
@@ -37,6 +42,8 @@ struct ContentView: View {
 struct MenuView: View {
     @ObservedObject var viewModel: GameViewModel
 
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
+
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(red: 0.10, green: 0.16, blue: 0.32),
@@ -44,67 +51,175 @@ struct MenuView: View {
                            startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
 
-            VStack(spacing: 28) {
-                Spacer()
+            VStack(spacing: 16) {
                 Text("👑")
-                    .font(.system(size: 84))
+                    .font(.system(size: 64))
+                    .padding(.top, 12)
                 Text("Royal Relvot")
-                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .font(.system(size: 40, weight: .black, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(colors: [.yellow, .orange],
                                        startPoint: .top, endPoint: .bottom))
                 Text("Guida il Re fino al portone nemico!")
-                    .font(.headline)
+                    .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.8))
 
-                VStack(spacing: 14) {
-                    ForEach(1...viewModel.levelCount, id: \.self) { index in
-                        LevelButton(index: index,
-                                    name: LevelDefinition.all[index - 1].name,
-                                    locked: index > viewModel.unlockedLevel) {
-                            viewModel.startLevel(index)
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(1...viewModel.levelCount, id: \.self) { index in
+                            LevelCell(index: index,
+                                      locked: index > viewModel.unlockedLevel) {
+                                viewModel.requestLevel(index)
+                            }
                         }
                     }
+                    .padding(.horizontal, 4)
                 }
-                .padding(.top, 12)
 
-                Spacer()
-                Text("Tocca il terreno per muovere il Re · Clone didattico")
+                Text("Truppe sbloccate: \(viewModel.unlockedTroops.count)/\(PlayerTroop.allCases.count) · Clone didattico")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.45))
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 6)
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, 24)
         }
     }
 }
 
-struct LevelButton: View {
+struct LevelCell: View {
     let index: Int
-    let name: String
     let locked: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack {
-                Text(locked ? "🔒" : "⚔️")
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Livello \(index)")
-                        .font(.headline)
-                    Text(name)
-                        .font(.caption)
-                        .opacity(0.75)
+            VStack(spacing: 4) {
+                Text(locked ? "🔒" : "\(index)")
+                    .font(.system(size: 22, weight: .black, design: .rounded))
+                Text(LevelDefinition.all[index - 1].name)
+                    .font(.system(size: 8))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .opacity(0.75)
+            }
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .background(locked ? Color.white.opacity(0.08) : Color.orange.opacity(0.85),
+                        in: RoundedRectangle(cornerRadius: 14))
+            .foregroundStyle(.white)
+        }
+        .disabled(locked)
+    }
+}
+
+// MARK: - Preparazione esercito
+
+struct LoadoutView: View {
+    @ObservedObject var viewModel: GameViewModel
+    let levelIndex: Int
+    @State private var selection: [PlayerTroop]
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
+
+    init(viewModel: GameViewModel, levelIndex: Int) {
+        self.viewModel = viewModel
+        self.levelIndex = levelIndex
+        _selection = State(initialValue: viewModel.loadout)
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.75).ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Text("Livello \(levelIndex) · \(LevelDefinition.all[levelIndex - 1].name)")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("Scegli fino a 3 truppe da portare in battaglia")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(PlayerTroop.allCases, id: \.self) { troop in
+                            TroopCard(troop: troop,
+                                      locked: troop.unlockLevel > viewModel.unlockedLevel,
+                                      selected: selection.contains(troop)) {
+                                toggle(troop)
+                            }
+                        }
+                    }
                 }
-                Spacer()
-                if !locked {
-                    Image(systemName: "chevron.right")
+                .frame(maxHeight: 420)
+
+                HStack(spacing: 12) {
+                    Button("Annulla") {
+                        viewModel.cancelLoadout()
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+
+                    Button("Inizia battaglia ⚔️") {
+                        viewModel.startPendingLevel(with: selection)
+                    }
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(selection.isEmpty ? Color.gray : Color.orange,
+                                in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+                    .disabled(selection.isEmpty)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 12)
-            .background(locked ? Color.white.opacity(0.08) : Color.orange.opacity(0.85),
-                        in: RoundedRectangle(cornerRadius: 16))
+            .padding(20)
+            .background(Color(red: 0.10, green: 0.12, blue: 0.22),
+                        in: RoundedRectangle(cornerRadius: 24))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func toggle(_ troop: PlayerTroop) {
+        if let i = selection.firstIndex(of: troop) {
+            selection.remove(at: i)
+        } else if troop.unlockLevel <= viewModel.unlockedLevel && selection.count < 3 {
+            selection.append(troop)
+        }
+    }
+}
+
+struct TroopCard: View {
+    let troop: PlayerTroop
+    let locked: Bool
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Text(locked ? "🔒" : troop.emoji)
+                    .font(.system(size: 30))
+                Text(troop.displayName)
+                    .font(.caption.bold())
+                Text(locked ? "Liv. \(troop.unlockLevel)" : troop.blurb)
+                    .font(.system(size: 9))
+                    .opacity(0.7)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                if !locked {
+                    Text("x\(troop.squadSize) · \(Int(troop.summonCooldown))s")
+                        .font(.system(size: 9, weight: .bold))
+                        .opacity(0.6)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 96)
+            .padding(6)
+            .background(locked ? Color.white.opacity(0.06) : Color.white.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(selected ? Color.yellow : Color.clear, lineWidth: 3))
             .foregroundStyle(.white)
         }
         .disabled(locked)
@@ -120,7 +235,7 @@ struct HUDOverlay: View {
         VStack {
             topBar
             Spacer()
-            spellBar
+            actionBar
         }
     }
 
@@ -157,19 +272,27 @@ struct HUDOverlay: View {
         .padding(.top, 8)
     }
 
-    private var spellBar: some View {
-        HStack(spacing: 22) {
-            SpellButton(emoji: "🔥", title: "Fuoco",
+    private var actionBar: some View {
+        HStack(spacing: 12) {
+            SpellButton(emoji: "🔥", title: "Fuoco", size: 56,
                         cooldown: viewModel.hud.fireballCD) {
                 viewModel.castFireball()
             }
-            SpellButton(emoji: "💚", title: "Cura",
+            SpellButton(emoji: "💚", title: "Cura", size: 56,
                         cooldown: viewModel.hud.healCD) {
                 viewModel.castHeal()
             }
-            SpellButton(emoji: "🛡️", title: "Evoca",
-                        cooldown: viewModel.hud.summonCD) {
-                viewModel.summonKnights()
+
+            Rectangle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 1, height: 44)
+
+            ForEach(Array(viewModel.loadout.enumerated()), id: \.offset) { i, troop in
+                SpellButton(emoji: troop.emoji, title: troop.displayName, size: 56,
+                            cooldown: i < viewModel.hud.slotCDs.count
+                                ? viewModel.hud.slotCDs[i] : 0) {
+                    viewModel.summonTroop(slot: i)
+                }
             }
         }
         .padding(.bottom, 18)
@@ -205,6 +328,7 @@ struct StatBar: View {
 struct SpellButton: View {
     let emoji: String
     let title: String
+    var size: CGFloat = 64
     /// 0 = pronto, 1 = appena lanciato.
     let cooldown: CGFloat
     let action: () -> Void
@@ -218,7 +342,7 @@ struct SpellButton: View {
                     Circle()
                         .fill(.black.opacity(isReady ? 0.55 : 0.75))
                     Text(emoji)
-                        .font(.system(size: 30))
+                        .font(.system(size: size * 0.47))
                         .opacity(isReady ? 1 : 0.35)
                     Circle()
                         .trim(from: 0, to: cooldown)
@@ -227,12 +351,13 @@ struct SpellButton: View {
                         .rotationEffect(.degrees(-90))
                         .padding(3)
                 }
-                .frame(width: 64, height: 64)
+                .frame(width: size, height: size)
                 .overlay(Circle().stroke(isReady ? Color.yellow : Color.white.opacity(0.25),
                                          lineWidth: 2))
                 Text(title)
-                    .font(.caption2.bold())
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
             }
         }
         .disabled(!isReady)
