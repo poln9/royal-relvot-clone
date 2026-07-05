@@ -14,6 +14,15 @@ enum UnitKind {
     case gate
 }
 
+/// Genere di danno inflitto da un attacco. Ogni unità può essere
+/// vulnerabile (danno x1.5), neutra (x1) o resistente (x0.6).
+enum DamageKind {
+    case taglio
+    case perforante
+    case esplosivo
+    case magico
+}
+
 /// Tratti speciali di combattimento di un'unità.
 struct CombatTraits {
     /// 0 = attacco in mischia, > 0 = velocità del proiettile.
@@ -32,8 +41,6 @@ struct CombatTraits {
     var healer: Bool = false
     /// Ignora le barricate.
     var flying: Bool = false
-    /// Moltiplicatore di danno contro strutture (torri, barricate, portone).
-    var structureDamageMultiplier: CGFloat = 1
 }
 
 /// Unità di gioco generica: eroe, truppe, nemici, torri, barricate e portone
@@ -44,6 +51,12 @@ final class Unit: SKNode {
     let maxHP: CGFloat
     private(set) var hp: CGFloat
     let damage: CGFloat
+    /// Genere del danno inflitto (nil per curatori e strutture inermi).
+    let damageKind: DamageKind?
+    /// Generi di danno che infliggono il 150% a questa unità.
+    let vulnerabilities: Set<DamageKind>
+    /// Generi di danno che infliggono il 60% a questa unità.
+    let resistances: Set<DamageKind>
     let attackRange: CGFloat
     let aggroRange: CGFloat
     let moveSpeed: CGFloat
@@ -62,7 +75,7 @@ final class Unit: SKNode {
     var isAlive: Bool { hp > 0 }
     var currentSpeed: CGFloat { slowRemaining > 0 ? moveSpeed * slowFactor : moveSpeed }
 
-    private let body = SKLabelNode()
+    private let body: SKNode
     private let statusLabel = SKLabelNode()
     private let barBack: SKSpriteNode
     private let barFill: SKSpriteNode
@@ -71,10 +84,14 @@ final class Unit: SKNode {
     init(team: Team,
          kind: UnitKind,
          emoji: String,
+         spriteName: String? = nil,
          badge: String? = nil,
          size: CGFloat,
          hp: CGFloat,
          damage: CGFloat,
+         damageKind: DamageKind? = nil,
+         vulnerabilities: Set<DamageKind> = [],
+         resistances: Set<DamageKind> = [],
          attackRange: CGFloat,
          aggroRange: CGFloat,
          moveSpeed: CGFloat,
@@ -86,6 +103,9 @@ final class Unit: SKNode {
         self.maxHP = hp
         self.hp = hp
         self.damage = damage
+        self.damageKind = damageKind
+        self.vulnerabilities = vulnerabilities
+        self.resistances = resistances
         self.attackRange = attackRange
         self.aggroRange = aggroRange
         self.moveSpeed = moveSpeed
@@ -96,12 +116,25 @@ final class Unit: SKNode {
                                     size: CGSize(width: barWidth, height: 6))
         self.barFill = SKSpriteNode(color: team == .player ? .green : .red,
                                     size: CGSize(width: barWidth - 2, height: 4))
+
+        // Sprite se disponibile nel bundle, altrimenti fallback emoji.
+        if let spriteName, UIImage(named: spriteName) != nil {
+            let texture = SKTexture(imageNamed: spriteName)
+            texture.filteringMode = .nearest
+            let sprite = SKSpriteNode(texture: texture)
+            let maxSide = max(texture.size().width, texture.size().height)
+            if maxSide > 0 { sprite.setScale(size * 1.55 / maxSide) }
+            self.body = sprite
+        } else {
+            let label = SKLabelNode()
+            label.text = emoji
+            label.fontSize = size
+            label.verticalAlignmentMode = .center
+            label.horizontalAlignmentMode = .center
+            self.body = label
+        }
         super.init()
 
-        body.text = emoji
-        body.fontSize = size
-        body.verticalAlignmentMode = .center
-        body.horizontalAlignmentMode = .center
         addChild(body)
 
         if let badge {
@@ -174,21 +207,27 @@ final class Unit: SKNode {
 
     // MARK: - Factory delle unità speciali
 
-    static func hero() -> Unit {
-        Unit(team: .player, kind: .hero, emoji: "🤴", size: 44,
-             hp: 650, damage: 38, attackRange: 70, aggroRange: 85,
+    /// L'eroe con le statistiche derivate dai potenziamenti acquistati.
+    static func hero(hp: CGFloat, damage: CGFloat) -> Unit {
+        Unit(team: .player, kind: .hero, emoji: "🤴", spriteName: "hero", size: 44,
+             hp: hp, damage: damage, damageKind: .taglio,
+             attackRange: 70, aggroRange: 85,
              moveSpeed: 270, attackInterval: 0.55, barWidth: 46)
     }
 
     static func gate(hp: CGFloat) -> Unit {
-        Unit(team: .enemy, kind: .gate, emoji: "🏰", size: 92,
-             hp: hp, damage: 0, attackRange: 0, aggroRange: 0,
+        Unit(team: .enemy, kind: .gate, emoji: "🏰", spriteName: "gate", size: 92,
+             hp: hp, damage: 0,
+             vulnerabilities: [.esplosivo], resistances: [.perforante],
+             attackRange: 0, aggroRange: 0,
              moveSpeed: 0, attackInterval: 10, barWidth: 130)
     }
 
     static func barricade(power: CGFloat) -> Unit {
-        Unit(team: .enemy, kind: .barricade, emoji: "🪵🪵🪵", size: 34,
-             hp: 380 * power, damage: 0, attackRange: 0, aggroRange: 0,
+        Unit(team: .enemy, kind: .barricade, emoji: "🪵🪵🪵", spriteName: "barricade", size: 34,
+             hp: 350 * power, damage: 0,
+             vulnerabilities: [.esplosivo], resistances: [.perforante],
+             attackRange: 0, aggroRange: 0,
              moveSpeed: 0, attackInterval: 10, barWidth: 110)
     }
 }

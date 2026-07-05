@@ -13,6 +13,10 @@ struct ContentView: View {
                         .id(pending)
                         .transition(.move(edge: .bottom))
                 }
+                if viewModel.showUpgrades {
+                    UpgradeView(viewModel: viewModel)
+                        .transition(.move(edge: .bottom))
+                }
             } else {
                 gameLayer
             }
@@ -51,12 +55,32 @@ struct MenuView: View {
                            startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
+            VStack(spacing: 14) {
+                HStack {
+                    Text("💰 \(viewModel.progression.gold)")
+                        .font(.headline)
+                        .foregroundStyle(.yellow)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(.black.opacity(0.35), in: Capsule())
+                    Spacer()
+                    Button {
+                        viewModel.showUpgrades = true
+                    } label: {
+                        Label("Potenziamenti", systemImage: "arrow.up.circle.fill")
+                            .font(.subheadline.bold())
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.purple.opacity(0.8), in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(.top, 6)
+
                 Text("👑")
-                    .font(.system(size: 64))
-                    .padding(.top, 12)
+                    .font(.system(size: 56))
                 Text("Royal Relvot")
-                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .font(.system(size: 38, weight: .black, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(colors: [.yellow, .orange],
                                        startPoint: .top, endPoint: .bottom))
@@ -111,6 +135,89 @@ struct LevelCell: View {
     }
 }
 
+// MARK: - Negozio potenziamenti
+
+struct UpgradeView: View {
+    @ObservedObject var viewModel: GameViewModel
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.75).ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                HStack {
+                    Text("Potenziamenti")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("💰 \(viewModel.progression.gold)")
+                        .font(.headline)
+                        .foregroundStyle(.yellow)
+                }
+
+                ForEach(UpgradeKind.allCases, id: \.self) { kind in
+                    UpgradeRow(kind: kind,
+                               level: viewModel.progression.level(of: kind),
+                               gold: viewModel.progression.gold) {
+                        viewModel.buyUpgrade(kind)
+                    }
+                }
+
+                Button("Chiudi") {
+                    viewModel.showUpgrades = false
+                }
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Color.white.opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(.white)
+            }
+            .padding(20)
+            .background(Color(red: 0.10, green: 0.12, blue: 0.22),
+                        in: RoundedRectangle(cornerRadius: 24))
+            .padding(.horizontal, 16)
+        }
+    }
+}
+
+struct UpgradeRow: View {
+    let kind: UpgradeKind
+    let level: Int
+    let gold: Int
+    let action: () -> Void
+
+    private var isMaxed: Bool { level >= kind.maxLevel }
+    private var cost: Int { kind.cost(atLevel: level) }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(kind.emoji).font(.system(size: 26))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(kind.title) · Liv. \(level)/\(kind.maxLevel)")
+                    .font(.subheadline.bold())
+                Text(kind.subtitle)
+                    .font(.caption2)
+                    .opacity(0.7)
+            }
+            Spacer()
+            Button(action: action) {
+                Text(isMaxed ? "MAX" : "💰\(cost)")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(isMaxed || gold < cost
+                                ? Color.white.opacity(0.1) : Color.green.opacity(0.8),
+                                in: Capsule())
+            }
+            .disabled(isMaxed || gold < cost)
+        }
+        .foregroundStyle(.white)
+        .padding(10)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
 // MARK: - Preparazione esercito
 
 struct LoadoutView: View {
@@ -134,7 +241,7 @@ struct LoadoutView: View {
                 Text("Livello \(levelIndex) · \(LevelDefinition.all[levelIndex - 1].name)")
                     .font(.headline)
                     .foregroundStyle(.white)
-                Text("Scegli fino a 3 truppe da portare in battaglia")
+                Text("Scegli fino a 3 truppe · le evochi spendendo elisir 🧪")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
 
@@ -209,7 +316,7 @@ struct TroopCard: View {
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                 if !locked {
-                    Text("x\(troop.squadSize) · \(Int(troop.summonCooldown))s")
+                    Text("x\(troop.squadSize) · 🧪\(troop.elixirCost)")
                         .font(.system(size: 9, weight: .bold))
                         .opacity(0.6)
                 }
@@ -235,6 +342,9 @@ struct HUDOverlay: View {
         VStack {
             topBar
             Spacer()
+            ElixirBar(value: viewModel.hud.elixir, maxValue: viewModel.hud.elixirMax)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 6)
             actionBar
         }
     }
@@ -288,9 +398,8 @@ struct HUDOverlay: View {
                 .frame(width: 1, height: 44)
 
             ForEach(Array(viewModel.loadout.enumerated()), id: \.offset) { i, troop in
-                SpellButton(emoji: troop.emoji, title: troop.displayName, size: 56,
-                            cooldown: i < viewModel.hud.slotCDs.count
-                                ? viewModel.hud.slotCDs[i] : 0) {
+                TroopButton(troop: troop,
+                            affordable: viewModel.hud.elixir >= CGFloat(troop.elixirCost)) {
                     viewModel.summonTroop(slot: i)
                 }
             }
@@ -301,6 +410,43 @@ struct HUDOverlay: View {
     private func timeString(_ t: TimeInterval) -> String {
         let seconds = Int(t.rounded(.up))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// Barra dell'elisir in stile pozione: si riempie col tempo.
+struct ElixirBar: View {
+    let value: CGFloat
+    let maxValue: CGFloat
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("🧪").font(.system(size: 18))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.black.opacity(0.55))
+                    Capsule()
+                        .fill(LinearGradient(colors: [.purple, .pink],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(0, geo.size.width
+                                          * min(1, maxValue > 0 ? value / maxValue : 0)))
+                    // Tacche per ogni punto elisir.
+                    HStack(spacing: 0) {
+                        ForEach(1..<Int(maxValue.rounded()), id: \.self) { _ in
+                            Spacer()
+                            Rectangle()
+                                .fill(.black.opacity(0.4))
+                                .frame(width: 1)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .frame(height: 16)
+            .clipShape(Capsule())
+            Text("\(Int(value))/\(Int(maxValue))")
+                .font(.system(.caption, design: .monospaced).bold())
+                .foregroundStyle(.white)
+        }
     }
 }
 
@@ -364,6 +510,44 @@ struct SpellButton: View {
     }
 }
 
+/// Pulsante di evocazione: mostra il costo in elisir, disabilitato
+/// quando l'elisir non basta.
+struct TroopButton: View {
+    let troop: PlayerTroop
+    let affordable: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack(alignment: .bottomTrailing) {
+                    ZStack {
+                        Circle()
+                            .fill(.black.opacity(affordable ? 0.55 : 0.75))
+                        Text(troop.emoji)
+                            .font(.system(size: 26))
+                            .opacity(affordable ? 1 : 0.35)
+                    }
+                    .frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(affordable ? Color.pink : Color.white.opacity(0.25),
+                                             lineWidth: 2))
+                    Text("\(troop.elixirCost)")
+                        .font(.system(size: 11, weight: .black))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(affordable ? Color.pink : Color.gray, in: Circle())
+                        .offset(x: 3, y: 3)
+                }
+                Text(troop.displayName)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
+            }
+        }
+        .disabled(!affordable)
+    }
+}
+
 // MARK: - Vittoria / Sconfitta
 
 struct ResultOverlay: View {
@@ -387,6 +571,11 @@ struct ResultOverlay: View {
                     .font(.subheadline)
                     .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
+                if isVictory {
+                    Text("+\(viewModel.lastReward) 💰")
+                        .font(.title3.bold())
+                        .foregroundStyle(.yellow)
+                }
 
                 VStack(spacing: 12) {
                     if isVictory && viewModel.hasNextLevel {

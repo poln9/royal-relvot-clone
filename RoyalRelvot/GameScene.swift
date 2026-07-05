@@ -6,19 +6,21 @@ struct HUDState {
     var gateHP: CGFloat = 1
     var timeLeft: TimeInterval = 0
     var allies: Int = 0
+    var elixir: CGFloat = 0
+    var elixirMax: CGFloat = 6
     /// Frazione di cooldown residuo (0 = pronto, 1 = appena lanciato).
     var fireballCD: CGFloat = 0
     var healCD: CGFloat = 0
-    /// Cooldown degli slot di evocazione (uno per truppa del loadout).
-    var slotCDs: [CGFloat] = []
 }
 
 /// Scena principale: il Re avanza lungo il sentiero verticale verso il
-/// portone nemico. Tap per muoversi, pulsanti SwiftUI per spell e truppe.
+/// portone nemico. Le truppe evocate partono dall'accampamento alla base
+/// del sentiero e costano elisir; l'elisir si rigenera nel tempo.
 final class GameScene: SKScene {
 
     let level: LevelDefinition
     let loadout: [PlayerTroop]
+    let config: BattleConfig
     var onHUDUpdate: ((HUDState) -> Void)?
     var onGameOver: ((Bool) -> Void)?
 
@@ -35,15 +37,17 @@ final class GameScene: SKScene {
     private var raiderIndex = 0
     private var isGameOver = false
 
+    private var elixir: CGFloat
     private var fireballReadyAt: TimeInterval = 0
     private var healReadyAt: TimeInterval = 0
-    private var slotReadyAt: [TimeInterval]
     private let fireballCooldown: TimeInterval = 8
     private let healCooldown: TimeInterval = 15
 
     private let pathHalfWidth: CGFloat = 150
-    private let maxAllies = 12
-    private let maxRaiders = 14
+    /// Limite tecnico ai nemici in campo (per le prestazioni).
+    private let maxRaiders = 18
+    /// Punto di evocazione delle truppe: l'accampamento del giocatore.
+    private let campPosition = CGPoint(x: 0, y: 40)
 
     private let formationOffsets: [CGPoint] = [
         CGPoint(x: -45, y: -35), CGPoint(x: 45, y: -35),
@@ -52,6 +56,8 @@ final class GameScene: SKScene {
         CGPoint(x: 0, y: -100),  CGPoint(x: 0, y: 60),
         CGPoint(x: -90, y: -55), CGPoint(x: 90, y: -55),
         CGPoint(x: -20, y: -130), CGPoint(x: 20, y: 90),
+        CGPoint(x: -60, y: -110), CGPoint(x: 60, y: -110),
+        CGPoint(x: -100, y: 30), CGPoint(x: 100, y: 30),
     ]
 
     /// Parametri di un colpo, catturati al momento dell'attacco così che
@@ -59,13 +65,15 @@ final class GameScene: SKScene {
     private struct HitPayload {
         let team: Team
         let damage: CGFloat
+        let damageKind: DamageKind?
         let traits: CombatTraits
     }
 
-    init(level: LevelDefinition, loadout: [PlayerTroop]) {
+    init(level: LevelDefinition, loadout: [PlayerTroop], config: BattleConfig) {
         self.level = level
         self.loadout = loadout
-        self.slotReadyAt = Array(repeating: 0, count: loadout.count)
+        self.config = config
+        self.elixir = config.elixirMax
         super.init(size: CGSize(width: 430, height: 932))
         scaleMode = .aspectFill
         backgroundColor = SKColor(red: 0.24, green: 0.55, blue: 0.30, alpha: 1)
@@ -103,10 +111,15 @@ final class GameScene: SKScene {
             addChild(deco)
         }
 
-        // Bandierina di partenza.
+        // Accampamento del giocatore: da qui partono le truppe evocate.
+        let camp = SKLabelNode(text: "⛺")
+        camp.fontSize = 44
+        camp.position = CGPoint(x: -70, y: 20)
+        camp.zPosition = 2
+        addChild(camp)
         let flag = SKLabelNode(text: "🚩")
-        flag.fontSize = 36
-        flag.position = CGPoint(x: -60, y: 20)
+        flag.fontSize = 30
+        flag.position = CGPoint(x: 70, y: 20)
         flag.zPosition = 2
         addChild(flag)
 
@@ -123,6 +136,15 @@ final class GameScene: SKScene {
         gate = Unit.gate(hp: level.gateHP)
         gate.position = CGPoint(x: 0, y: level.length)
         add(gate)
+
+        // Accampamento nemico (attivo dal livello 4: invia truppe regolarmente).
+        if level.enemyCampActive {
+            let enemyCamp = SKLabelNode(text: "⛺")
+            enemyCamp.fontSize = 40
+            enemyCamp.position = CGPoint(x: -95, y: level.length - 90)
+            enemyCamp.zPosition = 2
+            addChild(enemyCamp)
+        }
 
         // Torri difensive.
         for spec in level.towers {
@@ -150,7 +172,7 @@ final class GameScene: SKScene {
         }
 
         // Il Re e la scorta iniziale.
-        hero = Unit.hero()
+        hero = Unit.hero(hp: config.heroHP, damage: config.heroDamage)
         hero.position = CGPoint(x: 0, y: 80)
         hero.zPosition = 11
         add(hero)
@@ -210,11 +232,16 @@ final class GameScene: SKScene {
             return
         }
 
-        // Rinforzi nemici dal portone.
-        spawnAccumulator += dt
-        if spawnAccumulator >= level.spawnInterval {
-            spawnAccumulator = 0
-            spawnRaider()
+        // Rigenerazione elisir.
+        elixir = min(config.elixirMax, elixir + config.elixirRate * CGFloat(dt))
+
+        // Rinforzi dall'accampamento nemico.
+        if level.enemyCampActive {
+            spawnAccumulator += dt
+            if spawnAccumulator >= level.spawnInterval {
+                spawnAccumulator = 0
+                spawnRaider()
+            }
         }
 
         // Stati alterati (gelo, veleno).
@@ -360,7 +387,8 @@ final class GameScene: SKScene {
 
     private func performAttack(_ unit: Unit, on target: Unit) {
         unit.attackCooldown = unit.attackInterval
-        let payload = HitPayload(team: unit.team, damage: unit.damage, traits: unit.traits)
+        let payload = HitPayload(team: unit.team, damage: unit.damage,
+                                 damageKind: unit.damageKind, traits: unit.traits)
 
         if unit.traits.kamikaze {
             showExplosion(at: unit.position, radius: max(70, unit.traits.splashRadius))
@@ -408,10 +436,19 @@ final class GameScene: SKScene {
         return team == .enemy ? SKColor.orange : SKColor.yellow
     }
 
+    /// Moltiplicatore del danno in base a vulnerabilità e resistenze.
+    private func damageMultiplier(for kind: DamageKind?, against target: Unit) -> CGFloat {
+        guard let kind else { return 1 }
+        if target.vulnerabilities.contains(kind) { return 1.5 }
+        if target.resistances.contains(kind) { return 0.6 }
+        return 1
+    }
+
     private func applyHit(_ payload: HitPayload, to target: Unit) {
         applyEffects(of: payload.traits, to: target)
-        var damage = payload.damage
-        if target.isStatic { damage *= payload.traits.structureDamageMultiplier }
+        let multiplier = damageMultiplier(for: payload.damageKind, against: target)
+        let damage = payload.damage * multiplier
+        showDamageNumber(damage, multiplier: multiplier, at: target.position)
         deal(damage, to: target)
     }
 
@@ -464,7 +501,7 @@ final class GameScene: SKScene {
         let foe = level.raiders[raiderIndex % level.raiders.count]
         raiderIndex += 1
         let unit = foe.makeUnit(power: level.enemyPower, aggro: 100_000)
-        unit.position = CGPoint(x: CGFloat.random(in: -100...100), y: level.length - 90)
+        unit.position = CGPoint(x: CGFloat.random(in: -100...(-40)), y: level.length - 100)
         unit.alpha = 0
         add(unit)
         unit.run(.fadeIn(withDuration: 0.3))
@@ -477,12 +514,10 @@ final class GameScene: SKScene {
         fireballReadyAt = elapsed + fireballCooldown
         let center = hero.position
         showExplosion(at: center, radius: 160)
-        for unit in units where unit.team == .enemy
-            && unit.isAlive
-            && unit.position.distance(to: center) <= 160 {
-            deal(90, to: unit)
-            if isGameOver { break }
-        }
+        let payload = HitPayload(team: .player, damage: config.fireballDamage,
+                                 damageKind: .magico,
+                                 traits: CombatTraits(splashRadius: 160))
+        applyHitArea(payload, at: center)
         pushHUD()
     }
 
@@ -490,7 +525,7 @@ final class GameScene: SKScene {
         guard !isGameOver, elapsed >= healReadyAt else { return }
         healReadyAt = elapsed + healCooldown
         for unit in units where unit.team == .player && unit.isAlive {
-            unit.heal(unit.maxHP * 0.5)
+            unit.heal(unit.maxHP * config.healFraction)
         }
         let pulse = SKShapeNode(circleOfRadius: 90)
         pulse.strokeColor = SKColor(red: 0.3, green: 0.95, blue: 0.4, alpha: 0.9)
@@ -505,18 +540,17 @@ final class GameScene: SKScene {
         pushHUD()
     }
 
+    /// Evoca una squadra della truppa scelta: parte dall'accampamento
+    /// e raggiunge il Re. L'unico limite è il costo in elisir.
     func summonTroop(slot: Int) {
-        guard !isGameOver,
-              loadout.indices.contains(slot),
-              elapsed >= slotReadyAt[slot] else { return }
-        let allies = units.filter { $0.team == .player && $0 !== hero }.count
-        guard allies < maxAllies else { return }
+        guard !isGameOver, loadout.indices.contains(slot) else { return }
         let troop = loadout[slot]
-        slotReadyAt[slot] = elapsed + troop.summonCooldown
-        for _ in 0..<min(troop.squadSize, maxAllies - allies) {
+        guard elixir >= CGFloat(troop.elixirCost) else { return }
+        elixir -= CGFloat(troop.elixirCost)
+        for _ in 0..<troop.squadSize {
             let unit = troop.makeUnit()
-            unit.position = CGPoint(x: hero.position.x + CGFloat.random(in: -60...60),
-                                    y: hero.position.y - CGFloat.random(in: 40...80))
+            unit.position = CGPoint(x: campPosition.x + CGFloat.random(in: -50...50),
+                                    y: campPosition.y + CGFloat.random(in: -15...15))
             unit.alpha = 0
             add(unit)
             unit.run(.fadeIn(withDuration: 0.25))
@@ -559,6 +593,27 @@ final class GameScene: SKScene {
                                .removeFromParent()]))
     }
 
+    /// Numero di danno fluttuante: arancione se il bersaglio è vulnerabile,
+    /// grigio se resistente, bianco se neutro.
+    private func showDamageNumber(_ damage: CGFloat, multiplier: CGFloat, at point: CGPoint) {
+        let label = SKLabelNode(text: "\(Int(damage.rounded()))")
+        label.fontName = "AvenirNext-Heavy"
+        label.fontSize = multiplier > 1 ? 17 : 13
+        if multiplier > 1 {
+            label.fontColor = SKColor.orange
+        } else if multiplier < 1 {
+            label.fontColor = SKColor(white: 0.75, alpha: 1)
+        } else {
+            label.fontColor = SKColor.white
+        }
+        label.position = CGPoint(x: point.x + CGFloat.random(in: -12...12), y: point.y + 26)
+        label.zPosition = 45
+        addChild(label)
+        label.run(.sequence([.group([.moveBy(x: 0, y: 26, duration: 0.6),
+                                     .fadeOut(withDuration: 0.6)]),
+                             .removeFromParent()]))
+    }
+
     // MARK: - Camera / HUD / fine partita
 
     private func updateCamera() {
@@ -575,11 +630,10 @@ final class GameScene: SKScene {
         state.gateHP = gate.maxHP > 0 ? max(0, gate.hp / gate.maxHP) : 0
         state.timeLeft = max(0, level.timeLimit - elapsed)
         state.allies = units.filter { $0.team == .player && $0 !== hero }.count
+        state.elixir = elixir
+        state.elixirMax = config.elixirMax
         state.fireballCD = CGFloat(max(0, fireballReadyAt - elapsed) / fireballCooldown)
         state.healCD = CGFloat(max(0, healReadyAt - elapsed) / healCooldown)
-        state.slotCDs = loadout.indices.map { i in
-            CGFloat(max(0, slotReadyAt[i] - elapsed) / loadout[i].summonCooldown)
-        }
         onHUDUpdate?(state)
     }
 

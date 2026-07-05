@@ -18,6 +18,11 @@ final class GameViewModel: ObservableObject {
     /// Livello selezionato nel menu, in attesa della scelta delle truppe.
     @Published var pendingLevel: Int?
     @Published private(set) var loadout: [PlayerTroop] = []
+    @Published private(set) var progression: Progression
+    /// True quando è aperto il negozio dei potenziamenti.
+    @Published var showUpgrades = false
+    /// Oro guadagnato con l'ultima vittoria (mostrato nell'overlay).
+    @Published private(set) var lastReward = 0
 
     private(set) var currentLevel = 1
     private(set) var scene: GameScene?
@@ -28,6 +33,7 @@ final class GameViewModel: ObservableObject {
     init() {
         let unlocked = max(1, UserDefaults.standard.integer(forKey: Self.unlockedKey))
         unlockedLevel = unlocked
+        progression = Progression.load()
         loadout = Self.savedLoadout(unlockedLevel: unlocked)
     }
 
@@ -44,6 +50,18 @@ final class GameViewModel: ObservableObject {
             .filter { $0.unlockLevel <= unlockedLevel }
         if troops.isEmpty { troops = [.cavaliere] }
         return Array(troops.prefix(3))
+    }
+
+    // MARK: - Potenziamenti
+
+    func buyUpgrade(_ kind: UpgradeKind) {
+        let level = progression.level(of: kind)
+        guard level < kind.maxLevel else { return }
+        let cost = kind.cost(atLevel: level)
+        guard progression.gold >= cost else { return }
+        progression.gold -= cost
+        progression.increment(kind)
+        progression.save()
     }
 
     // MARK: - Navigazione
@@ -70,13 +88,21 @@ final class GameViewModel: ObservableObject {
         UserDefaults.standard.set(chosen.map(\.rawValue), forKey: Self.loadoutKey)
         hud = HUDState()
 
-        let scene = GameScene(level: LevelDefinition.all[index - 1], loadout: chosen)
+        let scene = GameScene(level: LevelDefinition.all[index - 1],
+                              loadout: chosen,
+                              config: BattleConfig(progression: progression))
         scene.onHUDUpdate = { [weak self] state in
             self?.hud = state
         }
         scene.onGameOver = { [weak self] victory in
             guard let self else { return }
             if victory {
+                // Prima vittoria su questo livello = ricompensa piena.
+                let firstTime = index >= self.unlockedLevel
+                let reward = GoldReward.forVictory(level: index, firstTime: firstTime)
+                self.lastReward = reward
+                self.progression.gold += reward
+                self.progression.save()
                 let next = min(index + 1, self.levelCount)
                 if next > self.unlockedLevel {
                     self.unlockedLevel = next

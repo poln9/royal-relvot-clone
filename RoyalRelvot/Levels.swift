@@ -23,7 +23,10 @@ struct LevelDefinition {
     let towers: [TowerSpec]
     let patrols: [PatrolSpec]
     let barricadeYs: [CGFloat]
-    /// Ciclo dei nemici mandati come rinforzo dal portone.
+    /// Se true, l'accampamento nemico vicino al portone invia truppe
+    /// regolarmente (dal livello 4 in poi).
+    let enemyCampActive: Bool
+    /// Ciclo dei nemici inviati dall'accampamento nemico.
     let raiders: [Foe]
     let spawnInterval: TimeInterval
     let gateHP: CGFloat
@@ -107,8 +110,9 @@ struct LevelDefinition {
             towers: towers,
             patrols: patrols,
             barricadeYs: barricadeYs,
+            enemyCampActive: i >= 4,
             raiders: Foe.raiders(at: i),
-            spawnInterval: max(9 - Double(i) * 0.28, 3.5),
+            spawnInterval: max(10 - Double(i) * 0.3, 3.5),
             gateHP: gateHP,
             enemyPower: power)
     }

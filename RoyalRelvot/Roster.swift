@@ -4,18 +4,19 @@ import SpriteKit
 
 /// Le 10 truppe ispirate al roster del gioco originale
 /// più 2 attaccanti inediti (Berserker e Drago).
+/// L'evocazione costa elisir; l'unico limite alle truppe in campo è l'elisir.
 enum PlayerTroop: String, CaseIterable {
     case cavaliere
     case arciere
     case paladino
-    case piromante
     case gelomante
-    case cannone
-    case balestriere
-    case mortaio
     case monaco
-    case ogre
+    case piromante
+    case balestriere
     case berserker
+    case cannone
+    case mortaio
+    case ogre
     case drago
 
     var emoji: String {
@@ -56,14 +57,14 @@ enum PlayerTroop: String, CaseIterable {
         switch self {
         case .cavaliere: return "Mischia equilibrato"
         case .arciere: return "Tiro rapido a distanza"
-        case .paladino: return "Tank da prima linea"
-        case .piromante: return "Palle di fuoco ad area"
+        case .paladino: return "Tank, resiste alle frecce"
+        case .piromante: return "Fuoco ad area"
         case .gelomante: return "Rallenta i nemici"
         case .cannone: return "Demolisce le strutture"
         case .balestriere: return "Colpi precisi e potenti"
         case .mortaio: return "Bombarda da lontano"
         case .monaco: return "Cura gli alleati"
-        case .ogre: return "Gigante devastante"
+        case .ogre: return "Gigante, resiste al taglio"
         case .berserker: return "Raffica di fendenti"
         case .drago: return "Vola e sputa fuoco"
         }
@@ -87,91 +88,123 @@ enum PlayerTroop: String, CaseIterable {
         }
     }
 
-    /// Quante unità evoca una singola chiamata.
-    var squadSize: Int {
+    /// Costo in elisir di una singola evocazione (l'intera squadra).
+    var elixirCost: Int {
         switch self {
-        case .cavaliere, .arciere: return 3
-        case .paladino, .piromante, .gelomante, .balestriere, .monaco, .berserker: return 2
-        case .cannone, .mortaio, .ogre, .drago: return 1
+        case .cavaliere: return 1
+        case .arciere: return 2
+        case .paladino, .gelomante, .monaco: return 3
+        case .piromante, .balestriere, .berserker: return 4
+        case .cannone: return 5
+        case .mortaio, .ogre: return 6
+        case .drago: return 8
         }
     }
 
-    var summonCooldown: TimeInterval {
+    /// Quante unità evoca una singola chiamata.
+    var squadSize: Int {
         switch self {
-        case .cavaliere: return 8
-        case .arciere: return 9
-        case .paladino: return 10
-        case .balestriere, .berserker: return 11
-        case .piromante, .gelomante, .monaco: return 12
-        case .cannone: return 13
-        case .mortaio: return 14
-        case .ogre: return 15
-        case .drago: return 16
+        case .cavaliere, .arciere, .paladino, .balestriere, .berserker: return 2
+        case .piromante, .gelomante, .monaco, .cannone, .mortaio, .ogre, .drago: return 1
         }
     }
 
     func makeUnit() -> Unit {
         switch self {
         case .cavaliere:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 32,
-                        hp: 160, damage: 13, attackRange: 50, aggroRange: 150,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_cavaliere", size: 32,
+                        hp: 150, damage: 13, damageKind: .taglio,
+                        attackRange: 50, aggroRange: 150,
                         moveSpeed: 250, attackInterval: 0.7, barWidth: 34)
         case .arciere:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 32,
-                        hp: 90, damage: 11, attackRange: 190, aggroRange: 210,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_arciere", size: 32,
+                        hp: 85, damage: 12, damageKind: .perforante,
+                        vulnerabilities: [.taglio],
+                        attackRange: 190, aggroRange: 210,
                         moveSpeed: 230, attackInterval: 0.9,
                         traits: CombatTraits(projectileSpeed: 500), barWidth: 34)
         case .paladino:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 36,
-                        hp: 280, damage: 16, attackRange: 50, aggroRange: 150,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_paladino", size: 36,
+                        hp: 300, damage: 15, damageKind: .taglio,
+                        resistances: [.perforante],
+                        attackRange: 50, aggroRange: 150,
                         moveSpeed: 220, attackInterval: 0.8, barWidth: 38)
         case .piromante:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 34,
-                        hp: 110, damage: 20, attackRange: 170, aggroRange: 200,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_piromante", size: 34,
+                        hp: 120, damage: 24, damageKind: .magico,
+                        vulnerabilities: [.taglio], resistances: [.magico],
+                        attackRange: 170, aggroRange: 200,
                         moveSpeed: 210, attackInterval: 1.2,
                         traits: CombatTraits(projectileSpeed: 450, splashRadius: 60),
                         barWidth: 36)
         case .gelomante:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 34,
-                        hp: 110, damage: 8, attackRange: 170, aggroRange: 200,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_gelomante", size: 34,
+                        hp: 120, damage: 8, damageKind: .magico,
+                        vulnerabilities: [.taglio], resistances: [.magico],
+                        attackRange: 170, aggroRange: 200,
                         moveSpeed: 210, attackInterval: 1.0,
                         traits: CombatTraits(projectileSpeed: 450,
                                              slowFactor: 0.45, slowDuration: 2.5),
                         barWidth: 36)
         case .cannone:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 36,
-                        hp: 180, damage: 30, attackRange: 210, aggroRange: 230,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_cannone", size: 36,
+                        hp: 200, damage: 40, damageKind: .esplosivo,
+                        vulnerabilities: [.magico], resistances: [.perforante],
+                        attackRange: 210, aggroRange: 230,
                         moveSpeed: 140, attackInterval: 1.6,
-                        traits: CombatTraits(projectileSpeed: 380, splashRadius: 40,
-                                             structureDamageMultiplier: 2.5),
+                        traits: CombatTraits(projectileSpeed: 380, splashRadius: 40),
                         barWidth: 38)
         case .balestriere:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 32,
-                        hp: 120, damage: 24, attackRange: 230, aggroRange: 250,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_balestriere", size: 32,
+                        hp: 110, damage: 26, damageKind: .perforante,
+                        vulnerabilities: [.taglio],
+                        attackRange: 230, aggroRange: 250,
                         moveSpeed: 200, attackInterval: 1.4,
                         traits: CombatTraits(projectileSpeed: 600), barWidth: 34)
         case .mortaio:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 34,
-                        hp: 140, damage: 36, attackRange: 280, aggroRange: 300,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_mortaio", size: 34,
+                        hp: 150, damage: 42, damageKind: .esplosivo,
+                        vulnerabilities: [.magico], resistances: [.perforante],
+                        attackRange: 280, aggroRange: 300,
                         moveSpeed: 120, attackInterval: 2.2,
-                        traits: CombatTraits(projectileSpeed: 300, splashRadius: 80),
+                        traits: CombatTraits(projectileSpeed: 300, splashRadius: 85),
                         barWidth: 36)
         case .monaco:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 34,
-                        hp: 150, damage: 30, attackRange: 150, aggroRange: 220,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_monaco", size: 34,
+                        hp: 150, damage: 28,
+                        vulnerabilities: [.perforante],
+                        attackRange: 150, aggroRange: 220,
                         moveSpeed: 230, attackInterval: 0.9,
                         traits: CombatTraits(healer: true), barWidth: 36)
         case .ogre:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 46,
-                        hp: 650, damage: 45, attackRange: 60, aggroRange: 150,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_ogre", size: 46,
+                        hp: 700, damage: 48, damageKind: .taglio,
+                        vulnerabilities: [.magico], resistances: [.taglio],
+                        attackRange: 60, aggroRange: 150,
                         moveSpeed: 140, attackInterval: 1.1, barWidth: 48)
         case .berserker:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 34,
-                        hp: 130, damage: 16, attackRange: 45, aggroRange: 170,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_berserker", size: 34,
+                        hp: 140, damage: 15, damageKind: .taglio,
+                        vulnerabilities: [.perforante],
+                        attackRange: 45, aggroRange: 170,
                         moveSpeed: 300, attackInterval: 0.35, barWidth: 36)
         case .drago:
-            return Unit(team: .player, kind: .troop, emoji: emoji, size: 46,
-                        hp: 380, damage: 28, attackRange: 160, aggroRange: 220,
+            return Unit(team: .player, kind: .troop, emoji: emoji,
+                        spriteName: "unit_drago", size: 46,
+                        hp: 420, damage: 30, damageKind: .magico,
+                        vulnerabilities: [.perforante], resistances: [.magico],
+                        attackRange: 160, aggroRange: 220,
                         moveSpeed: 200, attackInterval: 1.0,
                         traits: CombatTraits(projectileSpeed: 420, splashRadius: 55,
                                              flying: true),
@@ -208,11 +241,11 @@ enum Foe: CaseIterable {
         allCases.filter { $0.introLevel <= level }
     }
 
-    /// Nemici usati come rinforzi continui dal portone.
+    /// Nemici inviati regolarmente dall'accampamento nemico.
     static func raiders(at level: Int) -> [Foe] {
         var pool: [Foe] = [.goblin]
-        if level >= 3 { pool.append(.lupo) }
-        if level >= 5 { pool.append(.tiratore) }
+        if level >= 5 { pool.append(.lupo) }
+        if level >= 6 { pool.append(.tiratore) }
         if level >= 10 { pool.append(.gargolla) }
         if level >= 13 { pool.append(.negromante) }
         return pool
@@ -221,40 +254,56 @@ enum Foe: CaseIterable {
     func makeUnit(power: CGFloat, aggro: CGFloat = 300) -> Unit {
         switch self {
         case .goblin:
-            return Unit(team: .enemy, kind: .foe, emoji: "👹", size: 34,
-                        hp: 70 * power, damage: 9 * power, attackRange: 45,
-                        aggroRange: aggro, moveSpeed: 150, attackInterval: 0.8,
-                        barWidth: 36)
+            return Unit(team: .enemy, kind: .foe, emoji: "👹",
+                        spriteName: "foe_goblin", size: 34,
+                        hp: 65 * power, damage: 9 * power, damageKind: .taglio,
+                        attackRange: 45, aggroRange: aggro,
+                        moveSpeed: 150, attackInterval: 0.8, barWidth: 36)
         case .bruto:
-            return Unit(team: .enemy, kind: .foe, emoji: "👺", size: 44,
-                        hp: 250 * power, damage: 21 * power, attackRange: 50,
-                        aggroRange: aggro, moveSpeed: 110, attackInterval: 1.0,
-                        barWidth: 44)
+            return Unit(team: .enemy, kind: .foe, emoji: "👺",
+                        spriteName: "foe_bruto", size: 44,
+                        hp: 240 * power, damage: 20 * power, damageKind: .taglio,
+                        vulnerabilities: [.magico], resistances: [.taglio],
+                        attackRange: 50, aggroRange: aggro,
+                        moveSpeed: 110, attackInterval: 1.0, barWidth: 44)
         case .lupo:
-            return Unit(team: .enemy, kind: .foe, emoji: "🐺", size: 36,
-                        hp: 110 * power, damage: 14 * power, attackRange: 45,
-                        aggroRange: aggro, moveSpeed: 240, attackInterval: 0.6,
-                        barWidth: 38)
+            return Unit(team: .enemy, kind: .foe, emoji: "🐺",
+                        spriteName: "foe_lupo", size: 36,
+                        hp: 100 * power, damage: 13 * power, damageKind: .taglio,
+                        vulnerabilities: [.perforante],
+                        attackRange: 45, aggroRange: aggro,
+                        moveSpeed: 240, attackInterval: 0.55, barWidth: 38)
         case .tiratore:
-            return Unit(team: .enemy, kind: .foe, emoji: "🦹", size: 34,
-                        hp: 90 * power, damage: 12 * power, attackRange: 200,
-                        aggroRange: max(aggro, 220), moveSpeed: 140, attackInterval: 1.1,
+            return Unit(team: .enemy, kind: .foe, emoji: "🦹",
+                        spriteName: "foe_tiratore", size: 34,
+                        hp: 85 * power, damage: 12 * power, damageKind: .perforante,
+                        vulnerabilities: [.taglio],
+                        attackRange: 200, aggroRange: max(aggro, 220),
+                        moveSpeed: 140, attackInterval: 1.1,
                         traits: CombatTraits(projectileSpeed: 480), barWidth: 36)
         case .mummia:
-            return Unit(team: .enemy, kind: .foe, emoji: "🧟", size: 42,
-                        hp: 420 * power, damage: 18 * power, attackRange: 50,
-                        aggroRange: aggro, moveSpeed: 80, attackInterval: 1.2,
-                        barWidth: 44)
+            return Unit(team: .enemy, kind: .foe, emoji: "🧟",
+                        spriteName: "foe_mummia", size: 42,
+                        hp: 450 * power, damage: 17 * power, damageKind: .taglio,
+                        vulnerabilities: [.magico], resistances: [.perforante, .taglio],
+                        attackRange: 50, aggroRange: aggro,
+                        moveSpeed: 75, attackInterval: 1.2, barWidth: 44)
         case .gargolla:
-            return Unit(team: .enemy, kind: .foe, emoji: "🦇", size: 34,
-                        hp: 70 * power, damage: 45 * power, attackRange: 55,
-                        aggroRange: max(aggro, 400), moveSpeed: 260, attackInterval: 0.5,
+            return Unit(team: .enemy, kind: .foe, emoji: "🦇",
+                        spriteName: "foe_gargolla", size: 34,
+                        hp: 65 * power, damage: 42 * power, damageKind: .esplosivo,
+                        vulnerabilities: [.perforante], resistances: [.esplosivo],
+                        attackRange: 55, aggroRange: max(aggro, 400),
+                        moveSpeed: 260, attackInterval: 0.5,
                         traits: CombatTraits(splashRadius: 70, kamikaze: true, flying: true),
                         barWidth: 36)
         case .negromante:
-            return Unit(team: .enemy, kind: .foe, emoji: "🧛", size: 36,
-                        hp: 130 * power, damage: 24 * power, attackRange: 210,
-                        aggroRange: max(aggro, 230), moveSpeed: 120, attackInterval: 1.5,
+            return Unit(team: .enemy, kind: .foe, emoji: "🧛",
+                        spriteName: "foe_negromante", size: 36,
+                        hp: 125 * power, damage: 22 * power, damageKind: .magico,
+                        vulnerabilities: [.taglio], resistances: [.magico],
+                        attackRange: 210, aggroRange: max(aggro, 230),
+                        moveSpeed: 120, attackInterval: 1.5,
                         traits: CombatTraits(projectileSpeed: 420), barWidth: 38)
         }
     }
@@ -297,42 +346,73 @@ enum TowerKind: CaseIterable {
         }
     }
 
+    var spriteName: String {
+        switch self {
+        case .freccia: return "tower_freccia"
+        case .bomba: return "tower_bomba"
+        case .gelo: return "tower_gelo"
+        case .serpe: return "tower_serpe"
+        case .fuoco: return "tower_fuoco"
+        case .teschio: return "tower_teschio"
+        }
+    }
+
     func makeUnit(power: CGFloat) -> Unit {
+        // Tutte le torri sono strutture: vulnerabili all'esplosivo,
+        // resistenti al perforante.
         switch self {
         case .freccia:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 260 * power, damage: 16 * power, attackRange: 250,
-                        aggroRange: 250, moveSpeed: 0, attackInterval: 1.15,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 250 * power, damage: 15 * power, damageKind: .perforante,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 250, aggroRange: 250,
+                        moveSpeed: 0, attackInterval: 1.15,
                         traits: CombatTraits(projectileSpeed: 420), barWidth: 52)
         case .bomba:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 300 * power, damage: 22 * power, attackRange: 220,
-                        aggroRange: 220, moveSpeed: 0, attackInterval: 1.8,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 290 * power, damage: 22 * power, damageKind: .esplosivo,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 220, aggroRange: 220,
+                        moveSpeed: 0, attackInterval: 1.8,
                         traits: CombatTraits(projectileSpeed: 320, splashRadius: 70),
                         barWidth: 52)
         case .gelo:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 260 * power, damage: 8 * power, attackRange: 230,
-                        aggroRange: 230, moveSpeed: 0, attackInterval: 1.2,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 250 * power, damage: 8 * power, damageKind: .magico,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 230, aggroRange: 230,
+                        moveSpeed: 0, attackInterval: 1.2,
                         traits: CombatTraits(projectileSpeed: 420,
                                              slowFactor: 0.5, slowDuration: 2),
                         barWidth: 52)
         case .serpe:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 280 * power, damage: 6 * power, attackRange: 220,
-                        aggroRange: 220, moveSpeed: 0, attackInterval: 1.0,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 270 * power, damage: 6 * power, damageKind: .magico,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 220, aggroRange: 220,
+                        moveSpeed: 0, attackInterval: 1.0,
                         traits: CombatTraits(projectileSpeed: 420,
                                              poisonDPS: 10 * power, poisonDuration: 3),
                         barWidth: 52)
         case .fuoco:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 320 * power, damage: 40 * power, attackRange: 280,
-                        aggroRange: 280, moveSpeed: 0, attackInterval: 1.7,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 310 * power, damage: 38 * power, damageKind: .magico,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 280, aggroRange: 280,
+                        moveSpeed: 0, attackInterval: 1.7,
                         traits: CombatTraits(projectileSpeed: 520), barWidth: 52)
         case .teschio:
-            return Unit(team: .enemy, kind: .tower, emoji: "🗼", badge: badge, size: 54,
-                        hp: 380 * power, damage: 30 * power, attackRange: 200,
-                        aggroRange: 200, moveSpeed: 0, attackInterval: 2.0,
+            return Unit(team: .enemy, kind: .tower, emoji: "🗼",
+                        spriteName: spriteName, badge: badge, size: 54,
+                        hp: 370 * power, damage: 30 * power, damageKind: .esplosivo,
+                        vulnerabilities: [.esplosivo], resistances: [.perforante],
+                        attackRange: 200, aggroRange: 200,
+                        moveSpeed: 0, attackInterval: 2.0,
                         traits: CombatTraits(projectileSpeed: 300, splashRadius: 90),
                         barWidth: 52)
         }
