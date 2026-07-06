@@ -88,11 +88,19 @@ final class GameViewModel: ObservableObject {
         UserDefaults.standard.set(chosen.map(\.rawValue), forKey: Self.loadoutKey)
         hud = HUDState()
 
+        // Mette in pausa e scarta la scena precedente prima di crearne una
+        // nuova: la SpriteView viene ricreata da zero (vedi .id in ContentView),
+        // sostituire la scena in una view già montata causava un crash.
+        self.scene?.isPaused = true
+        self.scene = nil
+
         let scene = GameScene(level: LevelDefinition.all[index - 1],
                               loadout: chosen,
                               config: BattleConfig(progression: progression))
+        // Le callback arrivano dal ciclo di rendering di SpriteKit:
+        // pubblicare in modo asincrono evita mutazioni durante l'update UI.
         scene.onHUDUpdate = { [weak self] state in
-            self?.hud = state
+            DispatchQueue.main.async { self?.hud = state }
         }
         scene.onGameOver = { [weak self] victory in
             guard let self else { return }
@@ -121,6 +129,7 @@ final class GameViewModel: ObservableObject {
     func retryLevel() { startLevel(currentLevel, loadout: loadout) }
 
     func quitToMenu() {
+        scene?.isPaused = true
         scene = nil
         screen = .menu
     }

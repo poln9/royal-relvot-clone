@@ -13,9 +13,10 @@ struct HUDState {
     var healCD: CGFloat = 0
 }
 
-/// Scena principale: il Re avanza lungo il sentiero verticale verso il
-/// portone nemico. Le truppe evocate partono dall'accampamento alla base
-/// del sentiero e costano elisir; l'elisir si rigenera nel tempo.
+/// Scena principale. Il mondo è un insieme di corridoi (curve e
+/// biforcazioni); le truppe evocate partono dall'accampamento e seguono
+/// da sole la strada verso il portone, l'eroe è comandato dal giocatore
+/// e non insegue mai: attacca ciò che gli capita a tiro.
 final class GameScene: SKScene {
 
     let level: LevelDefinition
@@ -43,11 +44,13 @@ final class GameScene: SKScene {
     private let fireballCooldown: TimeInterval = 8
     private let healCooldown: TimeInterval = 15
 
-    private let pathHalfWidth: CGFloat = 150
     /// Limite tecnico ai nemici in campo (per le prestazioni).
     private let maxRaiders = 18
-    /// Punto di evocazione delle truppe: l'accampamento del giocatore.
-    private let campPosition = CGPoint(x: 0, y: 40)
+    /// Oltre questa distanza i nemici smettono di inseguire e tornano
+    /// alla loro routine (pattuglia ferma o marcia lungo la strada).
+    private let engagementRange: CGFloat = 320
+
+    private var campPosition: CGPoint { level.road[0] }
 
     /// Parametri di un colpo, catturati al momento dell'attacco così che
     /// il danno resti valido anche se l'attaccante muore nel frattempo.
@@ -82,70 +85,84 @@ final class GameScene: SKScene {
     }
 
     private func buildWorld() {
-        // Sentiero di sabbia al centro (colore base delle tile Kenney),
-        // erba tutto intorno.
-        let path = SKSpriteNode(color: SKColor(red: 234 / 255, green: 165 / 255, blue: 108 / 255, alpha: 1),
-                                size: CGSize(width: pathHalfWidth * 2, height: level.length + 500))
-        path.position = CGPoint(x: 0, y: level.length / 2)
-        path.zPosition = 1
-        addChild(path)
+        let sand = SKColor(red: 234 / 255, green: 165 / 255, blue: 108 / 255, alpha: 1)
 
-        // Dettagli di sabbia sul sentiero (si fondono col colore base).
-        for _ in 0..<Int(level.length / 180) {
-            let sand = decoNode(sprite: Bool.random() ? "deco_sand1" : "deco_sand2",
-                                emoji: "", size: 40)
-            sand.position = CGPoint(x: CGFloat.random(in: -110...110),
-                                    y: CGFloat.random(in: 0...level.length))
-            sand.zPosition = 1.5
-            addChild(sand)
+        // Corridoi di sabbia percorribili.
+        for rect in level.corridors {
+            let node = SKSpriteNode(color: sand, size: rect.size)
+            node.position = CGPoint(x: rect.midX, y: rect.midY)
+            node.zPosition = 1
+            addChild(node)
         }
 
-        // Alberi e funghi ai lati del sentiero.
-        let decoSprites = ["deco_tree1", "deco_tree2", "deco_tree3",
-                           "deco_tree4", "deco_mushroom"]
-        let decoEmoji = ["🌲", "🌳", "🌳", "🌲", "🍄"]
-        for i in 0..<40 {
-            let pick = i % decoSprites.count
+        // Dettagli di sabbia dentro i corridoi.
+        for rect in level.corridors where rect.height > 250 || rect.width > 250 {
+            let count = Int((rect.width * rect.height) / 60000)
+            for _ in 0..<count {
+                let sandDetail = decoNode(sprite: Bool.random() ? "deco_sand1" : "deco_sand2",
+                                          emoji: "", size: 40)
+                sandDetail.position = CGPoint(x: CGFloat.random(in: rect.minX + 25...rect.maxX - 25),
+                                              y: CGFloat.random(in: rect.minY + 25...rect.maxY - 25))
+                sandDetail.zPosition = 1.5
+                addChild(sandDetail)
+            }
+        }
+
+        // Vegetazione sull'erba, evitando i corridoi.
+        let decoSprites = ["deco_tree1", "deco_tree2", "deco_tree3", "deco_tree4",
+                           "deco_mushroom", "deco_grass1", "deco_grass2"]
+        let decoEmoji = ["🌲", "🌳", "🌳", "🌲", "🍄", "🌿", "🌿"]
+        var placed = 0
+        var attempts = 0
+        while placed < 90 && attempts < 400 {
+            attempts += 1
+            let p = CGPoint(x: CGFloat.random(in: -300...300),
+                            y: CGFloat.random(in: -120...(level.length + 80)))
+            if isWalkable(p, margin: 30) { continue }
+            let pick = Int.random(in: 0..<decoSprites.count)
             let deco = decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
-                                size: CGFloat.random(in: 28...44))
-            let side: CGFloat = Bool.random() ? -1 : 1
-            deco.position = CGPoint(x: side * CGFloat.random(in: 175...270),
-                                    y: CGFloat.random(in: -100...(level.length + 100)))
+                                size: pick < 4 ? CGFloat.random(in: 30...46)
+                                               : CGFloat.random(in: 22...30))
+            deco.position = p
             deco.zPosition = 2
             addChild(deco)
+            placed += 1
         }
+
+        // Qualche punto di interesse: pozzo e cartello vicino al campo.
+        let sign = decoNode(sprite: "deco_sign", emoji: "🪧", size: 30)
+        sign.position = CGPoint(x: campPosition.x + 85, y: campPosition.y - 10)
+        sign.zPosition = 2
+        addChild(sign)
+        let well = decoNode(sprite: "deco_well", emoji: "🛢️", size: 34)
+        well.position = CGPoint(x: campPosition.x - 85, y: campPosition.y + 55)
+        well.zPosition = 2
+        addChild(well)
 
         // Accampamento del giocatore: da qui partono le truppe evocate.
         let camp = SKLabelNode(text: "⛺")
         camp.fontSize = 44
-        camp.position = CGPoint(x: -70, y: 20)
+        camp.position = CGPoint(x: campPosition.x - 55, y: campPosition.y - 25)
         camp.zPosition = 2
         addChild(camp)
-        let flag = SKLabelNode(text: "🚩")
-        flag.fontSize = 30
-        flag.position = CGPoint(x: 70, y: 20)
-        flag.zPosition = 2
-        addChild(flag)
 
-        // Mura ai lati del portone.
-        let wallColor = SKColor(red: 0.45, green: 0.42, blue: 0.40, alpha: 1)
+        // Portone nemico e mura in cima.
+        let gatePos = level.gatePosition
+        gate = Unit.gate(hp: level.gateHP)
+        gate.position = gatePos
+        add(gate)
         for side: CGFloat in [-1, 1] {
-            let wall = SKSpriteNode(color: wallColor, size: CGSize(width: 180, height: 46))
-            wall.position = CGPoint(x: side * 155, y: level.length + 10)
+            let wall = decoNode(sprite: "gatewall", emoji: "", size: 110)
+            wall.position = CGPoint(x: gatePos.x + side * 160, y: gatePos.y + 8)
             wall.zPosition = 3
             addChild(wall)
         }
-
-        // Portone nemico in cima al sentiero.
-        gate = Unit.gate(hp: level.gateHP)
-        gate.position = CGPoint(x: 0, y: level.length)
-        add(gate)
 
         // Accampamento nemico (attivo dal livello 4: invia truppe regolarmente).
         if level.enemyCampActive {
             let enemyCamp = SKLabelNode(text: "⛺")
             enemyCamp.fontSize = 40
-            enemyCamp.position = CGPoint(x: -95, y: level.length - 90)
+            enemyCamp.position = CGPoint(x: gatePos.x - 68, y: gatePos.y - 95)
             enemyCamp.zPosition = 2
             addChild(enemyCamp)
         }
@@ -153,36 +170,39 @@ final class GameScene: SKScene {
         // Torri difensive.
         for spec in level.towers {
             let tower = spec.kind.makeUnit(power: level.enemyPower)
-            tower.position = CGPoint(x: spec.side * 125, y: spec.y)
+            tower.position = spec.position
             add(tower)
         }
 
-        // Barricate che sbarrano il sentiero.
-        for y in level.barricadeYs {
+        // Barricate sui tratti verticali della strada.
+        for point in level.barricadePoints {
             let barricade = Unit.barricade(power: level.enemyPower)
-            barricade.position = CGPoint(x: 0, y: y)
+            barricade.position = point
             add(barricade)
         }
 
         // Pattuglie di guardia.
-        let xs: [CGFloat] = [-50, 50, 0, -90, 90, -20]
+        let offsets: [CGPoint] = [CGPoint(x: -45, y: 0), CGPoint(x: 45, y: 0),
+                                  CGPoint(x: 0, y: 42), CGPoint(x: -55, y: 46),
+                                  CGPoint(x: 55, y: 46), CGPoint(x: 0, y: -40)]
         for spec in level.patrols {
             for (k, foe) in spec.foes.enumerated() {
                 let unit = foe.makeUnit(power: level.enemyPower)
-                unit.position = CGPoint(x: xs[k % xs.count],
-                                        y: spec.y + CGFloat(k / 3) * 46)
+                let off = offsets[k % offsets.count]
+                unit.position = CGPoint(x: spec.position.x + off.x,
+                                        y: spec.position.y + off.y)
                 add(unit)
             }
         }
 
         // Il Re e la scorta iniziale.
         hero = Unit.hero(hp: config.heroHP, damage: config.heroDamage)
-        hero.position = CGPoint(x: 0, y: 80)
+        hero.position = CGPoint(x: campPosition.x, y: campPosition.y + 45)
         hero.zPosition = 11
         add(hero)
-        for x in [CGFloat(-50), CGFloat(50)] {
+        for x in [CGFloat(-45), CGFloat(45)] {
             let knight = PlayerTroop.cavaliere.makeUnit()
-            knight.position = CGPoint(x: x, y: 40)
+            knight.position = CGPoint(x: campPosition.x + x, y: campPosition.y)
             add(knight)
         }
     }
@@ -207,6 +227,15 @@ final class GameScene: SKScene {
         return label
     }
 
+    // MARK: - Terreno percorribile
+
+    private func isWalkable(_ point: CGPoint, margin: CGFloat = -8) -> Bool {
+        for rect in level.corridors where rect.insetBy(dx: margin, dy: margin).contains(point) {
+            return true
+        }
+        return false
+    }
+
     // MARK: - Input
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -221,8 +250,8 @@ final class GameScene: SKScene {
 
     private func setMoveTarget(_ point: CGPoint, showMarker: Bool) {
         guard !isGameOver else { return }
-        let clamped = CGPoint(x: min(max(point.x, -pathHalfWidth + 15), pathHalfWidth - 15),
-                              y: min(max(point.y, 40), level.length - 40))
+        let clamped = CGPoint(x: min(max(point.x, -290), 290),
+                              y: min(max(point.y, 20), level.length - 30))
         moveTarget = clamped
         guard showMarker else { return }
         let marker = SKShapeNode(circleOfRadius: 14)
@@ -276,14 +305,16 @@ final class GameScene: SKScene {
                 updateEnemy(unit, dt: dt)
             case .player:
                 if unit === hero {
-                    updateFighter(unit, fallback: moveTarget, dt: dt)
+                    updateHero(dt: dt)
                 } else {
-                    // Le truppe avanzano da sole lungo la propria corsia
-                    // verso il portone, ingaggiando ciò che incontrano.
-                    let advance = CGPoint(x: unit.position.x, y: level.length)
-                    updateFighter(unit, fallback: advance, dt: dt)
+                    updateAlly(unit, dt: dt)
                 }
             }
+        }
+
+        // Animazione camminata: attiva solo per chi si è mosso di recente.
+        for unit in units where unit.isAlive && !unit.isStatic {
+            unit.setWalking(elapsed - unit.lastWalkAt < 0.15)
         }
 
         updateCamera()
@@ -314,20 +345,26 @@ final class GameScene: SKScene {
         }
     }
 
-    private func updateEnemy(_ unit: Unit, dt: TimeInterval) {
-        guard unit.damage > 0 else { return } // portone e barricate non attaccano
-        guard let target = nearestOpponent(of: unit, within: unit.aggroRange) else { return }
-        let d = unit.position.distance(to: target.position)
-        if d <= unit.attackRange {
-            if unit.attackCooldown == 0 { performAttack(unit, on: target) }
-        } else if !unit.isStatic {
-            move(unit, toward: target.position, dt: dt)
+    // MARK: - Comportamenti
+
+    /// L'eroe obbedisce solo al giocatore: si muove verso il punto toccato
+    /// e attacca senza fermarsi ciò che entra nel suo raggio. Mai inseguire:
+    /// così può sempre disimpegnarsi da un corpo a corpo.
+    private func updateHero(dt: TimeInterval) {
+        if hero.attackCooldown == 0,
+           let target = nearestOpponent(of: hero, within: hero.attackRange) {
+            performAttack(hero, on: target)
+        }
+        if let dest = moveTarget, hero.position.distance(to: dest) > 8 {
+            move(hero, toward: dest, dt: dt)
         }
     }
 
-    private func updateFighter(_ unit: Unit, fallback: CGPoint?, dt: TimeInterval) {
+    /// Le truppe alleate avanzano da sole lungo la strada verso il portone,
+    /// ingaggiando ciò che incontrano.
+    private func updateAlly(_ unit: Unit, dt: TimeInterval) {
         if unit.traits.healer {
-            updateHealer(unit, fallback: fallback, dt: dt)
+            updateHealer(unit, dt: dt)
             return
         }
         if let target = nearestOpponent(of: unit, within: unit.aggroRange) {
@@ -337,12 +374,12 @@ final class GameScene: SKScene {
             } else {
                 move(unit, toward: target.position, dt: dt)
             }
-        } else if let dest = fallback, unit.position.distance(to: dest) > 8 {
-            move(unit, toward: dest, dt: dt)
+        } else {
+            move(unit, toward: roadTarget(for: unit, ascending: true), dt: dt)
         }
     }
 
-    private func updateHealer(_ unit: Unit, fallback: CGPoint?, dt: TimeInterval) {
+    private func updateHealer(_ unit: Unit, dt: TimeInterval) {
         let injured = units
             .filter { $0.team == unit.team && $0.isAlive && $0 !== unit && $0.hp < $0.maxHP }
             .min { $0.hp / $0.maxHP < $1.hp / $1.maxHP }
@@ -358,9 +395,49 @@ final class GameScene: SKScene {
             } else {
                 move(unit, toward: target.position, dt: dt)
             }
-        } else if let dest = fallback, unit.position.distance(to: dest) > 8 {
-            move(unit, toward: dest, dt: dt)
+        } else {
+            move(unit, toward: roadTarget(for: unit, ascending: true), dt: dt)
         }
+    }
+
+    private func updateEnemy(_ unit: Unit, dt: TimeInterval) {
+        guard unit.damage > 0 else { return } // portone e barricate non attaccano
+        let isRaider = unit.aggroRange >= 9000
+        let range = min(unit.aggroRange, engagementRange)
+        if let target = nearestOpponent(of: unit, within: range) {
+            let d = unit.position.distance(to: target.position)
+            if d <= unit.attackRange {
+                if unit.attackCooldown == 0 { performAttack(unit, on: target) }
+            } else if !unit.isStatic {
+                move(unit, toward: target.position, dt: dt)
+            }
+        } else if isRaider && !unit.isStatic {
+            // I rinforzi marciano lungo la strada verso il campo del giocatore.
+            move(unit, toward: roadTarget(for: unit, ascending: false), dt: dt)
+        }
+    }
+
+    /// Prossimo waypoint della strada per un'unità che avanza (ascending)
+    /// o scende verso il campo del giocatore (descending).
+    private func roadTarget(for unit: Unit, ascending: Bool) -> CGPoint {
+        let road = level.road
+        // Riaggancia il waypoint più vicino se mai inizializzato o troppo lontano.
+        if unit.roadIndex < 0 || unit.roadIndex >= road.count
+            || unit.position.distance(to: road[unit.roadIndex]) > 340 {
+            var best = 0
+            var bestDistance = CGFloat.greatestFiniteMagnitude
+            for (k, p) in road.enumerated() {
+                let d = unit.position.distance(to: p)
+                if d < bestDistance { bestDistance = d; best = k }
+            }
+            unit.roadIndex = best
+        }
+        let next = ascending ? min(unit.roadIndex + 1, road.count - 1)
+                             : max(unit.roadIndex - 1, 0)
+        if unit.position.distance(to: road[next]) < 36 {
+            unit.roadIndex = next
+        }
+        return road[next]
     }
 
     private func nearestOpponent(of unit: Unit, within range: CGFloat) -> Unit? {
@@ -376,6 +453,8 @@ final class GameScene: SKScene {
         return best
     }
 
+    /// Movimento con scorrimento lungo i muri: se la posizione tentata esce
+    /// dai corridoi prova prima solo l'asse Y, poi solo l'asse X.
     private func move(_ unit: Unit, toward point: CGPoint, dt: TimeInterval) {
         let dx = point.x - unit.position.x
         let dy = point.y - unit.position.y
@@ -385,10 +464,12 @@ final class GameScene: SKScene {
         let nx = unit.position.x + dx / len * min(step, len)
         var ny = unit.position.y + dy / len * min(step, len)
 
-        // Le barricate sbarrano la strada alle unità di terra del giocatore.
+        // Le barricate sbarrano la strada alle unità di terra del giocatore
+        // (solo nella loro corsia).
         if unit.team == .player && !unit.traits.flying {
             for barricade in units
-            where barricade.kind == .barricade && barricade.isAlive {
+            where barricade.kind == .barricade && barricade.isAlive
+                && abs(unit.position.x - barricade.position.x) < 85 {
                 let limit = barricade.position.y - 36
                 if unit.position.y <= limit && ny > limit {
                     ny = limit
@@ -396,8 +477,20 @@ final class GameScene: SKScene {
             }
         }
 
-        unit.position = CGPoint(x: min(max(nx, -pathHalfWidth + 10), pathHalfWidth - 10),
-                                y: min(max(ny, 20), level.length + 20))
+        let clampedX = min(max(nx, -300), 300)
+        let clampedY = min(max(ny, 0), level.length + 30)
+        let attempted = CGPoint(x: clampedX, y: clampedY)
+
+        if unit.traits.flying || isWalkable(attempted) {
+            unit.position = attempted
+        } else if isWalkable(CGPoint(x: unit.position.x, y: clampedY)) {
+            unit.position = CGPoint(x: unit.position.x, y: clampedY)
+        } else if isWalkable(CGPoint(x: clampedX, y: unit.position.y)) {
+            unit.position = CGPoint(x: clampedX, y: unit.position.y)
+        } else {
+            return
+        }
+        unit.lastWalkAt = elapsed
     }
 
     // MARK: - Attacchi
@@ -421,22 +514,94 @@ final class GameScene: SKScene {
         }
     }
 
+    /// Ogni genere di attacco a distanza ha il suo proiettile:
+    /// freccia ruotata, bomba, cristallo di gelo, fiala di veleno,
+    /// globo di fuoco o di magia oscura.
+    private func makeProjectileNode(for payload: HitPayload, angle: CGFloat) -> SKNode {
+        let traits = payload.traits
+        if traits.slowFactor > 0 {
+            // Cristallo di gelo: rombo ciano.
+            let diamond = SKShapeNode(rectOf: CGSize(width: 11, height: 11))
+            diamond.fillColor = .cyan
+            diamond.strokeColor = SKColor(white: 1, alpha: 0.8)
+            diamond.zRotation = .pi / 4
+            return diamond
+        }
+        if traits.poisonDPS > 0 {
+            // Fiala di veleno: goccia verde.
+            let drop = SKShapeNode(circleOfRadius: 6)
+            drop.fillColor = SKColor(red: 0.35, green: 0.85, blue: 0.2, alpha: 1)
+            drop.strokeColor = SKColor(red: 0.1, green: 0.4, blue: 0.05, alpha: 1)
+            return drop
+        }
+        switch payload.damageKind {
+        case .perforante:
+            // Freccia (sprite Kenney orientata a 45°) ruotata verso il bersaglio.
+            if UIImage(named: "proj_arrow") != nil {
+                let texture = SKTexture(imageNamed: "proj_arrow")
+                texture.filteringMode = .nearest
+                let arrow = SKSpriteNode(texture: texture)
+                arrow.setScale(28 / max(texture.size().width, texture.size().height))
+                arrow.zRotation = angle - .pi / 4
+                return arrow
+            }
+            let bolt = SKShapeNode(rectOf: CGSize(width: 16, height: 3), cornerRadius: 1.5)
+            bolt.fillColor = SKColor(red: 0.55, green: 0.38, blue: 0.2, alpha: 1)
+            bolt.strokeColor = .clear
+            bolt.zRotation = angle
+            return bolt
+        case .esplosivo:
+            // Bomba (sprite Kenney) o palla di cannone.
+            if UIImage(named: "proj_bomb") != nil {
+                let texture = SKTexture(imageNamed: "proj_bomb")
+                texture.filteringMode = .nearest
+                let bomb = SKSpriteNode(texture: texture)
+                bomb.setScale(24 / max(texture.size().width, texture.size().height))
+                return bomb
+            }
+            let ball = SKShapeNode(circleOfRadius: 7)
+            ball.fillColor = SKColor(white: 0.2, alpha: 1)
+            ball.strokeColor = SKColor(white: 0.05, alpha: 1)
+            return ball
+        case .magico:
+            // Globo magico: fuoco per il giocatore, magia oscura per i nemici.
+            let orb = SKShapeNode(circleOfRadius: 7)
+            if payload.team == .enemy {
+                orb.fillColor = SKColor(red: 0.65, green: 0.3, blue: 0.9, alpha: 0.95)
+                orb.strokeColor = SKColor(red: 0.4, green: 0.1, blue: 0.6, alpha: 1)
+            } else {
+                orb.fillColor = SKColor(red: 1, green: 0.55, blue: 0.15, alpha: 0.95)
+                orb.strokeColor = SKColor(red: 0.8, green: 0.25, blue: 0, alpha: 1)
+            }
+            orb.glowWidth = 3
+            return orb
+        default:
+            let dot = SKShapeNode(circleOfRadius: 5)
+            dot.fillColor = payload.team == .enemy ? .orange : .yellow
+            dot.strokeColor = SKColor(white: 0, alpha: 0.4)
+            return dot
+        }
+    }
+
     private func fireProjectile(_ payload: HitPayload, from unit: Unit, to target: Unit) {
-        let projectile = SKShapeNode(circleOfRadius: payload.traits.splashRadius > 0 ? 6 : 5)
-        projectile.fillColor = projectileColor(for: payload.traits, team: payload.team)
-        projectile.strokeColor = SKColor(white: 0, alpha: 0.4)
-        projectile.position = CGPoint(x: unit.position.x, y: unit.position.y + 24)
+        let origin = CGPoint(x: unit.position.x, y: unit.position.y + 24)
+        let destination = target.position
+        let angle = atan2(destination.y - origin.y, destination.x - origin.x)
+
+        let projectile = makeProjectileNode(for: payload, angle: angle)
+        projectile.position = origin
         projectile.zPosition = 30
         addChild(projectile)
 
-        let destination = target.position
-        let duration = TimeInterval(projectile.position.distance(to: destination)
+        let duration = TimeInterval(origin.distance(to: destination)
                                     / payload.traits.projectileSpeed)
         projectile.run(.sequence([
             .move(to: destination, duration: duration),
             .run { [weak self, weak target] in
                 guard let self else { return }
                 if payload.traits.splashRadius > 0 {
+                    self.showExplosion(at: destination,
+                                       radius: payload.traits.splashRadius)
                     self.applyHitArea(payload, at: destination)
                 } else if let target, target.isAlive,
                           target.position.distance(to: destination) <= 60 {
@@ -445,12 +610,6 @@ final class GameScene: SKScene {
             },
             .removeFromParent(),
         ]))
-    }
-
-    private func projectileColor(for traits: CombatTraits, team: Team) -> SKColor {
-        if traits.slowFactor > 0 { return SKColor.cyan }
-        if traits.poisonDPS > 0 { return SKColor.green }
-        return team == .enemy ? SKColor.orange : SKColor.yellow
     }
 
     /// Moltiplicatore del danno in base a vulnerabilità e resistenze.
@@ -518,7 +677,9 @@ final class GameScene: SKScene {
         let foe = level.raiders[raiderIndex % level.raiders.count]
         raiderIndex += 1
         let unit = foe.makeUnit(power: level.enemyPower, aggro: 100_000)
-        unit.position = CGPoint(x: CGFloat.random(in: -100...(-40)), y: level.length - 100)
+        let gatePos = level.gatePosition
+        unit.position = CGPoint(x: gatePos.x + CGFloat.random(in: -60...60),
+                                y: gatePos.y - 110)
         unit.alpha = 0
         add(unit)
         unit.run(.fadeIn(withDuration: 0.3))
@@ -558,7 +719,7 @@ final class GameScene: SKScene {
     }
 
     /// Evoca una squadra della truppa scelta: parte dall'accampamento
-    /// e raggiunge il Re. L'unico limite è il costo in elisir.
+    /// e avanza da sola. L'unico limite è il costo in elisir.
     func summonTroop(slot: Int) {
         guard !isGameOver, loadout.indices.contains(slot) else { return }
         let troop = loadout[slot]
@@ -590,7 +751,7 @@ final class GameScene: SKScene {
                                      .fadeOut(withDuration: 0.4)]),
                              .removeFromParent()]))
         let boom = SKLabelNode(text: "💥")
-        boom.fontSize = 60
+        boom.fontSize = min(60, radius * 0.7)
         boom.position = point
         boom.zPosition = 41
         addChild(boom)
@@ -638,7 +799,9 @@ final class GameScene: SKScene {
         let minY: CGFloat = 380
         let maxY = max(minY, level.length - 260)
         let targetY = min(max(hero.position.y + 150, minY), maxY)
-        cam.position = CGPoint(x: 0, y: targetY)
+        // Segue l'eroe anche in orizzontale (il mondo è più largo dello schermo).
+        let targetX = min(max(hero.position.x, -90), 90)
+        cam.position = CGPoint(x: targetX, y: targetY)
     }
 
     private func pushHUD() {

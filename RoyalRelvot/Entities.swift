@@ -71,6 +71,11 @@ final class Unit: SKNode {
     var poisonRemaining: TimeInterval = 0
     var poisonDPS: CGFloat = 0
 
+    // Navigazione lungo la strada del livello (gestita dalla scena).
+    var roadIndex: Int = -1
+    /// Ultimo istante (tempo di gioco) in cui l'unità si è mossa.
+    var lastWalkAt: TimeInterval = -1
+
     var isStatic: Bool { moveSpeed == 0 }
     var isAlive: Bool { hp > 0 }
     var currentSpeed: CGFloat { slowRemaining > 0 ? moveSpeed * slowFactor : moveSpeed }
@@ -194,6 +199,25 @@ final class Unit: SKNode {
         barFill.xScale = maxHP > 0 ? hp / maxHP : 0
     }
 
+    private var isWalking = false
+
+    /// Animazione di camminata: dondolio del corpo mentre l'unità si muove.
+    func setWalking(_ walking: Bool) {
+        guard walking != isWalking else { return }
+        isWalking = walking
+        if walking {
+            let wobble = SKAction.repeatForever(.sequence([
+                .rotate(toAngle: 0.09, duration: 0.13),
+                .rotate(toAngle: -0.09, duration: 0.26),
+                .rotate(toAngle: 0, duration: 0.13),
+            ]))
+            body.run(wobble, withKey: "walk")
+        } else {
+            body.removeAction(forKey: "walk")
+            body.zRotation = 0
+        }
+    }
+
     /// Piccolo affondo verso il bersaglio per rendere leggibile l'attacco in mischia.
     func lunge(toward point: CGPoint) {
         let dx = point.x - position.x
@@ -208,10 +232,12 @@ final class Unit: SKNode {
     // MARK: - Factory delle unità speciali
 
     /// L'eroe con le statistiche derivate dai potenziamenti acquistati.
+    /// Raggio corto: attacca solo ciò che è davvero adiacente e non
+    /// insegue mai — il movimento resta sempre in mano al giocatore.
     static func hero(hp: CGFloat, damage: CGFloat) -> Unit {
         Unit(team: .player, kind: .hero, emoji: "🤴", spriteName: "hero", size: 44,
              hp: hp, damage: damage, damageKind: .taglio,
-             attackRange: 70, aggroRange: 85,
+             attackRange: 62, aggroRange: 62,
              moveSpeed: 270, attackInterval: 0.55, barWidth: 46)
     }
 

@@ -28,8 +28,11 @@ struct ContentView: View {
     private var gameLayer: some View {
         ZStack {
             if let scene = viewModel.scene {
+                // .id forza una SpriteView nuova per ogni battaglia:
+                // riusare la stessa view cambiando scena crashava su device.
                 SpriteView(scene: scene, options: [.ignoresSiblingOrder])
                     .ignoresSafeArea()
+                    .id(ObjectIdentifier(scene))
             }
             if viewModel.screen == .playing {
                 HUDOverlay(viewModel: viewModel)
