@@ -80,7 +80,11 @@ final class Unit: SKNode {
     var isAlive: Bool { hp > 0 }
     var currentSpeed: CGFloat { slowRemaining > 0 ? moveSpeed * slowFactor : moveSpeed }
 
+    /// Raggio usato dalla risoluzione delle collisioni (niente sovrapposizioni).
+    let collisionRadius: CGFloat
+
     private let body: SKNode
+    private var bodyBaseScale: CGFloat = 1
     private let statusLabel = SKLabelNode()
     private let barBack: SKSpriteNode
     private let barFill: SKSpriteNode
@@ -119,6 +123,7 @@ final class Unit: SKNode {
         self.attackInterval = attackInterval
         self.traits = traits
         self.barWidth = barWidth
+        self.collisionRadius = size * 0.42
         self.barBack = SKSpriteNode(color: SKColor(white: 0, alpha: 0.55),
                                     size: CGSize(width: barWidth, height: 6))
         self.barFill = SKSpriteNode(color: team == .player ? .green : .red,
@@ -147,7 +152,20 @@ final class Unit: SKNode {
         }
         super.init()
 
+        // Ombra a terra: ancora visivamente l'unità al terreno.
+        let shadow = SKShapeNode(ellipseOf: CGSize(width: size * (traits.flying ? 0.5 : 0.8),
+                                                   height: size * 0.26))
+        shadow.fillColor = SKColor(white: 0, alpha: 0.22)
+        shadow.strokeColor = .clear
+        shadow.position = CGPoint(x: 0, y: -size * (traits.flying ? 0.7 : 0.48))
+        shadow.zPosition = -1
+        addChild(shadow)
+
+        // Le unità volanti fluttuano un po' più in alto.
+        if traits.flying { body.position.y += 8 }
+
         addChild(body)
+        bodyBaseScale = body.xScale
 
         if let badge {
             let badgeLabel = SKLabelNode(text: badge)
@@ -208,21 +226,52 @@ final class Unit: SKNode {
 
     private var isWalking = false
 
-    /// Animazione di camminata: dondolio del corpo mentre l'unità si muove.
+    /// Animazione di camminata: dondolio + passo molleggiato.
     func setWalking(_ walking: Bool) {
         guard walking != isWalking else { return }
         isWalking = walking
         if walking {
             let wobble = SKAction.repeatForever(.sequence([
-                .rotate(toAngle: 0.09, duration: 0.13),
-                .rotate(toAngle: -0.09, duration: 0.26),
+                .group([.rotate(toAngle: 0.08, duration: 0.13),
+                        .scaleY(to: 1.05, duration: 0.13)]),
+                .group([.rotate(toAngle: -0.08, duration: 0.26),
+                        .scaleY(to: 0.96, duration: 0.13)]),
                 .rotate(toAngle: 0, duration: 0.13),
             ]))
             body.run(wobble, withKey: "walk")
         } else {
             body.removeAction(forKey: "walk")
             body.zRotation = 0
+            body.yScale = abs(bodyBaseScale)
         }
+    }
+
+    /// Gira lo sprite verso la direzione di marcia (o del bersaglio).
+    func face(dx: CGFloat) {
+        guard abs(dx) > 4 else { return }
+        let magnitude = abs(bodyBaseScale)
+        body.xScale = dx < 0 ? -magnitude : magnitude
+    }
+
+    /// Entrata in scena: sbuca dal terreno con un piccolo rimbalzo.
+    func playSpawn() {
+        setScale(0.15)
+        run(.sequence([.scale(to: 1.12, duration: 0.18),
+                       .scale(to: 1.0, duration: 0.1)]))
+    }
+
+    /// Morte: l'unità si accascia di lato, poi svanisce.
+    /// Il nodo si rimuove da solo a fine animazione.
+    func playDeath() {
+        removeAllActions()
+        body.removeAllActions()
+        let fallDirection: CGFloat = Bool.random() ? 1 : -1
+        body.run(.group([.rotate(toAngle: fallDirection * .pi / 2, duration: 0.22),
+                         .moveBy(x: 0, y: -6, duration: 0.22),
+                         .scale(to: abs(bodyBaseScale) * 0.9, duration: 0.22)]))
+        run(.sequence([.wait(forDuration: 0.3),
+                       .fadeOut(withDuration: 0.35),
+                       .removeFromParent()]))
     }
 
     /// Piccolo affondo verso il bersaglio per rendere leggibile l'attacco in mischia.

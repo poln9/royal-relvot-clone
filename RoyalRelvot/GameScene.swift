@@ -96,11 +96,11 @@ final class GameScene: SKScene {
         // Accampamento del giocatore: da qui partono le truppe evocate.
         let camp = decoNode(sprite: "camp_player", emoji: "⛺", size: 46)
         camp.position = CGPoint(x: campPosition.x - 58, y: campPosition.y - 20)
-        camp.zPosition = 2
+        camp.zPosition = depthZ(camp.position.y)
         addChild(camp)
         let campfire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 22)
         campfire.position = CGPoint(x: campPosition.x + 62, y: campPosition.y - 15)
-        campfire.zPosition = 2
+        campfire.zPosition = depthZ(campfire.position.y)
         campfire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.35),
                                                .scale(to: 0.95, duration: 0.35)])))
         addChild(campfire)
@@ -113,7 +113,7 @@ final class GameScene: SKScene {
         for side: CGFloat in [-1, 1] {
             let wall = decoNode(sprite: "gatewall", emoji: "", size: 74)
             wall.position = CGPoint(x: gatePos.x + side * 155, y: gatePos.y + 4)
-            wall.zPosition = 3
+            wall.zPosition = depthZ(wall.position.y)
             addChild(wall)
         }
 
@@ -121,11 +121,11 @@ final class GameScene: SKScene {
         if level.enemyCampActive {
             let enemyCamp = decoNode(sprite: "camp_enemy", emoji: "⛺", size: 48)
             enemyCamp.position = CGPoint(x: gatePos.x - 66, y: gatePos.y - 100)
-            enemyCamp.zPosition = 2
+            enemyCamp.zPosition = depthZ(enemyCamp.position.y)
             addChild(enemyCamp)
             let fire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 20)
             fire.position = CGPoint(x: gatePos.x - 20, y: gatePos.y - 118)
-            fire.zPosition = 2
+            fire.zPosition = depthZ(fire.position.y)
             fire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.4),
                                                .scale(to: 0.95, duration: 0.4)])))
             addChild(fire)
@@ -174,6 +174,13 @@ final class GameScene: SKScene {
     private func add(_ unit: Unit) {
         units.append(unit)
         addChild(unit)
+    }
+
+    /// Profondità in base alla Y nel mondo: più in basso = più davanti.
+    /// Stessa scala usata per le unità, così sprite alti (alberi, case)
+    /// e personaggi si coprono correttamente a vicenda.
+    private func depthZ(_ y: CGFloat) -> CGFloat {
+        10 + (level.length - y) * 0.0012
     }
 
     /// Nodo decorativo: sprite se disponibile nel bundle, altrimenti emoji.
@@ -272,7 +279,7 @@ final class GameScene: SKScene {
             let house = decoNode(sprite: houseNames[v % houseNames.count],
                                  emoji: "🏠", size: 52)
             house.position = p
-            house.zPosition = 2
+            house.zPosition = depthZ(p.y)
             addChild(house)
             let farm = decoNode(sprite: farmNames[v % farmNames.count],
                                 emoji: "🌾", size: 56)
@@ -284,7 +291,7 @@ final class GameScene: SKScene {
                                  emoji: "🏚️", size: 44)
             extra.position = CGPoint(x: p.x + CGFloat.random(in: 48...66),
                                      y: p.y + CGFloat.random(in: -26...26))
-            extra.zPosition = 2
+            extra.zPosition = depthZ(extra.position.y)
             addChild(extra)
         }
 
@@ -300,7 +307,7 @@ final class GameScene: SKScene {
                                 size: pick < 4 ? CGFloat.random(in: 30...48)
                                                : CGFloat.random(in: 20...32))
             deco.position = p
-            deco.zPosition = 2
+            deco.zPosition = depthZ(p.y)
             addChild(deco)
         }
     }
@@ -390,9 +397,17 @@ final class GameScene: SKScene {
             }
         }
 
+        // Le unità non possono sovrapporsi: separazione fisica.
+        resolveCollisions()
+
         // Animazione camminata: attiva solo per chi si è mosso di recente.
         for unit in units where unit.isAlive && !unit.isStatic {
             unit.setWalking(elapsed - unit.lastWalkAt < 0.15)
+        }
+
+        // Profondità: chi è più in basso sullo schermo è disegnato davanti.
+        for unit in units {
+            unit.zPosition = 10 + (level.length - unit.position.y) * 0.0012
         }
 
         updateCamera()
@@ -518,6 +533,54 @@ final class GameScene: SKScene {
         return road[next]
     }
 
+    /// Spinge fuori l'una dall'altra le unità che si compenetrano.
+    /// Le strutture sono inamovibili; le unità volanti passano sopra
+    /// a quelle di terra.
+    private func resolveCollisions() {
+        let alive = units.filter { $0.isAlive }
+        guard alive.count > 1 else { return }
+        for i in 0..<(alive.count - 1) {
+            for j in (i + 1)..<alive.count {
+                let a = alive[i]
+                let b = alive[j]
+                if a.isStatic && b.isStatic { continue }
+                if a.traits.flying != b.traits.flying { continue }
+                let minDistance = a.collisionRadius + b.collisionRadius
+                let dx = b.position.x - a.position.x
+                let dy = b.position.y - a.position.y
+                let distanceSquared = dx * dx + dy * dy
+                guard distanceSquared < minDistance * minDistance else { continue }
+
+                var nx: CGFloat = 0
+                var ny: CGFloat = 1
+                var distance = sqrt(distanceSquared)
+                if distance > 0.01 {
+                    nx = dx / distance
+                    ny = dy / distance
+                } else {
+                    let angle = CGFloat.random(in: 0..<(2 * .pi))
+                    nx = cos(angle)
+                    ny = sin(angle)
+                    distance = 0.01
+                }
+                let overlap = minDistance - distance
+                if a.isStatic {
+                    b.position.x += nx * overlap
+                    b.position.y += ny * overlap
+                } else if b.isStatic {
+                    a.position.x -= nx * overlap
+                    a.position.y -= ny * overlap
+                } else {
+                    let half = overlap / 2
+                    a.position.x -= nx * half
+                    a.position.y -= ny * half
+                    b.position.x += nx * half
+                    b.position.y += ny * half
+                }
+            }
+        }
+    }
+
     private func nearestOpponent(of unit: Unit, within range: CGFloat) -> Unit? {
         var best: Unit?
         var bestDistance = CGFloat.greatestFiniteMagnitude
@@ -568,6 +631,7 @@ final class GameScene: SKScene {
         } else {
             return
         }
+        unit.face(dx: dx)
         unit.lastWalkAt = elapsed
     }
 
@@ -575,6 +639,7 @@ final class GameScene: SKScene {
 
     private func performAttack(_ unit: Unit, on target: Unit) {
         unit.attackCooldown = unit.attackInterval
+        unit.face(dx: target.position.x - unit.position.x)
         let payload = HitPayload(team: unit.team, damage: unit.damage,
                                  damageKind: unit.damageKind, traits: unit.traits)
 
@@ -738,12 +803,10 @@ final class GameScene: SKScene {
 
     private func deal(_ amount: CGFloat, to target: Unit, flash: Bool = true) {
         guard target.applyDamage(amount, flash: flash) else { return }
-        // Il bersaglio è morto.
+        // Il bersaglio è morto: animazione di caduta (si rimuove da sola).
         playSound(target.isStatic ? "sfx_structure" : "sfx_death", throttle: 0.12)
         units.removeAll { $0 === target }
-        target.run(.sequence([.group([.fadeOut(withDuration: 0.3),
-                                      .scale(to: 0.3, duration: 0.3)]),
-                              .removeFromParent()]))
+        target.playDeath()
         if target === gate {
             endGame(victory: true)
         } else if target === hero {
@@ -765,9 +828,9 @@ final class GameScene: SKScene {
         let gatePos = level.gatePosition
         unit.position = CGPoint(x: gatePos.x + CGFloat.random(in: -60...60),
                                 y: gatePos.y - 110)
-        unit.alpha = 0
         add(unit)
-        unit.run(.fadeIn(withDuration: 0.3))
+        unit.playSpawn()
+        showDust(at: unit.position)
     }
 
     // MARK: - Spell e evocazioni (chiamate dal ViewModel)
@@ -816,9 +879,9 @@ final class GameScene: SKScene {
             let unit = troop.makeUnit()
             unit.position = CGPoint(x: campPosition.x + CGFloat.random(in: -50...50),
                                     y: campPosition.y + CGFloat.random(in: -15...15))
-            unit.alpha = 0
             add(unit)
-            unit.run(.fadeIn(withDuration: 0.25))
+            unit.playSpawn()
+            showDust(at: unit.position)
         }
         pushHUD()
     }
@@ -860,6 +923,24 @@ final class GameScene: SKScene {
         boom.run(.sequence([.wait(forDuration: 0.35),
                             .fadeOut(withDuration: 0.2),
                             .removeFromParent()]))
+    }
+
+    /// Sbuffo di polvere quando un'unità entra in scena.
+    private func showDust(at point: CGPoint) {
+        for _ in 0..<3 {
+            let puff = SKShapeNode(circleOfRadius: CGFloat.random(in: 4...7))
+            puff.fillColor = SKColor(white: 0.9, alpha: 0.5)
+            puff.strokeColor = .clear
+            puff.position = CGPoint(x: point.x + CGFloat.random(in: -14...14),
+                                    y: point.y - 12)
+            puff.zPosition = 9
+            addChild(puff)
+            puff.run(.sequence([.group([.moveBy(x: CGFloat.random(in: -12...12), y: 10,
+                                                duration: 0.4),
+                                        .scale(to: 1.8, duration: 0.4),
+                                        .fadeOut(withDuration: 0.4)]),
+                                .removeFromParent()]))
+        }
     }
 
     private func showHealSparkle(at point: CGPoint) {
