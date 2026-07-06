@@ -96,7 +96,7 @@ struct LevelDefinition {
             let segH = CGFloat(430 + rng.int(150))
             let roll = rng.int(100)
 
-            if i >= 3 && roll < 32 {
+            if i >= 3 && roll < 45 {
                 // Biforcazione a diamante: due rami paralleli, la strada
                 // principale ne sceglie uno; l'altro resta esplorabile.
                 let top = y + max(segH, 520)
@@ -113,7 +113,7 @@ struct LevelDefinition {
             } else if roll < 70 {
                 // Curva a S: il corridoio devia lateralmente a metà tratto.
                 let dir: CGFloat = x > 40 ? -1 : (x < -40 ? 1 : (rng.int(2) == 0 ? 1 : -1))
-                let newX = max(-170, min(170, x + dir * CGFloat(160 + rng.int(60))))
+                let newX = max(-185, min(185, x + dir * CGFloat(170 + rng.int(70))))
                 let mid = y + segH * 0.55
                 vertical(x, from: y, to: mid + 95)
                 horizontal(x, newX, at: mid)

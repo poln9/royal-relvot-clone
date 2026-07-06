@@ -90,6 +90,8 @@ final class Unit: SKNode {
          kind: UnitKind,
          emoji: String,
          spriteName: String? = nil,
+         tint: SKColor? = nil,
+         tintBlend: CGFloat = 0.45,
          badge: String? = nil,
          size: CGFloat,
          hp: CGFloat,
@@ -123,12 +125,17 @@ final class Unit: SKNode {
                                     size: CGSize(width: barWidth - 2, height: 4))
 
         // Sprite se disponibile nel bundle, altrimenti fallback emoji.
+        // La tinta differenzia le varianti della stessa figura base
+        // (es. piromante arancio e gelomante ciano dallo stesso mago).
         if let spriteName, UIImage(named: spriteName) != nil {
             let texture = SKTexture(imageNamed: spriteName)
-            texture.filteringMode = .nearest
             let sprite = SKSpriteNode(texture: texture)
             let maxSide = max(texture.size().width, texture.size().height)
             if maxSide > 0 { sprite.setScale(size * 1.55 / maxSide) }
+            if let tint {
+                sprite.color = tint
+                sprite.colorBlendFactor = tintBlend
+            }
             self.body = sprite
         } else {
             let label = SKLabelNode()

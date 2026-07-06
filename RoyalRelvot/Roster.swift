@@ -119,7 +119,8 @@ enum PlayerTroop: String, CaseIterable {
                         moveSpeed: 150, attackInterval: 0.7, barWidth: 34)
         case .arciere:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_arciere", size: 32,
+                        spriteName: "unit_arciere",
+                        tint: SKColor(red: 0.95, green: 0.8, blue: 0.35, alpha: 1), size: 32,
                         hp: 85, damage: 12, damageKind: .perforante,
                         vulnerabilities: [.taglio],
                         attackRange: 190, aggroRange: 210,
@@ -134,7 +135,8 @@ enum PlayerTroop: String, CaseIterable {
                         moveSpeed: 130, attackInterval: 0.8, barWidth: 38)
         case .piromante:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_piromante", size: 34,
+                        spriteName: "unit_piromante",
+                        tint: SKColor(red: 1, green: 0.5, blue: 0.15, alpha: 1), size: 34,
                         hp: 120, damage: 24, damageKind: .magico,
                         vulnerabilities: [.taglio], resistances: [.magico],
                         attackRange: 170, aggroRange: 200,
@@ -143,7 +145,8 @@ enum PlayerTroop: String, CaseIterable {
                         barWidth: 36)
         case .gelomante:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_gelomante", size: 34,
+                        spriteName: "unit_gelomante",
+                        tint: SKColor(red: 0.4, green: 0.8, blue: 1, alpha: 1), size: 34,
                         hp: 120, damage: 8, damageKind: .magico,
                         vulnerabilities: [.taglio], resistances: [.magico],
                         attackRange: 170, aggroRange: 200,
@@ -162,7 +165,8 @@ enum PlayerTroop: String, CaseIterable {
                         barWidth: 38)
         case .balestriere:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_balestriere", size: 32,
+                        spriteName: "unit_balestriere",
+                        tint: SKColor(red: 0.6, green: 0.4, blue: 0.22, alpha: 1), size: 32,
                         hp: 110, damage: 26, damageKind: .perforante,
                         vulnerabilities: [.taglio],
                         attackRange: 230, aggroRange: 250,
@@ -187,14 +191,16 @@ enum PlayerTroop: String, CaseIterable {
                         traits: CombatTraits(healer: true), barWidth: 36)
         case .ogre:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_ogre", size: 46,
+                        spriteName: "unit_ogre",
+                        tint: SKColor(red: 0.3, green: 0.5, blue: 0.25, alpha: 1), size: 46,
                         hp: 700, damage: 48, damageKind: .taglio,
                         vulnerabilities: [.magico], resistances: [.taglio],
                         attackRange: 60, aggroRange: 150,
                         moveSpeed: 90, attackInterval: 1.1, barWidth: 48)
         case .berserker:
             return Unit(team: .player, kind: .troop, emoji: emoji,
-                        spriteName: "unit_berserker", size: 34,
+                        spriteName: "unit_berserker",
+                        tint: SKColor(red: 0.85, green: 0.2, blue: 0.15, alpha: 1), size: 34,
                         hp: 140, damage: 15, damageKind: .taglio,
                         vulnerabilities: [.perforante],
                         attackRange: 45, aggroRange: 170,
@@ -261,14 +267,17 @@ enum Foe: CaseIterable {
                         moveSpeed: 150, attackInterval: 0.8, barWidth: 36)
         case .bruto:
             return Unit(team: .enemy, kind: .foe, emoji: "👺",
-                        spriteName: "foe_bruto", size: 44,
+                        spriteName: "foe_bruto",
+                        tint: SKColor(red: 0.65, green: 0.25, blue: 0.2, alpha: 1), size: 44,
                         hp: 240 * power, damage: 20 * power, damageKind: .taglio,
                         vulnerabilities: [.magico], resistances: [.taglio],
                         attackRange: 50, aggroRange: aggro,
                         moveSpeed: 110, attackInterval: 1.0, barWidth: 44)
         case .lupo:
             return Unit(team: .enemy, kind: .foe, emoji: "🐺",
-                        spriteName: "foe_lupo", size: 36,
+                        spriteName: "foe_lupo",
+                        tint: SKColor(red: 0.4, green: 0.26, blue: 0.15, alpha: 1),
+                        tintBlend: 0.5, size: 36,
                         hp: 100 * power, damage: 13 * power, damageKind: .taglio,
                         vulnerabilities: [.perforante],
                         attackRange: 45, aggroRange: aggro,
@@ -283,14 +292,18 @@ enum Foe: CaseIterable {
                         traits: CombatTraits(projectileSpeed: 480), barWidth: 36)
         case .mummia:
             return Unit(team: .enemy, kind: .foe, emoji: "🧟",
-                        spriteName: "foe_mummia", size: 42,
+                        spriteName: "foe_mummia",
+                        tint: SKColor(red: 1, green: 1, blue: 0.9, alpha: 1),
+                        tintBlend: 0.55, size: 42,
                         hp: 450 * power, damage: 17 * power, damageKind: .taglio,
                         vulnerabilities: [.magico], resistances: [.perforante, .taglio],
                         attackRange: 50, aggroRange: aggro,
                         moveSpeed: 75, attackInterval: 1.2, barWidth: 44)
         case .gargolla:
             return Unit(team: .enemy, kind: .foe, emoji: "🦇",
-                        spriteName: "foe_gargolla", size: 34,
+                        spriteName: "foe_gargolla",
+                        tint: SKColor(red: 0.3, green: 0.3, blue: 0.4, alpha: 1),
+                        tintBlend: 0.5, size: 34,
                         hp: 65 * power, damage: 42 * power, damageKind: .esplosivo,
                         vulnerabilities: [.perforante], resistances: [.esplosivo],
                         attackRange: 55, aggroRange: max(aggro, 400),
@@ -299,7 +312,9 @@ enum Foe: CaseIterable {
                         barWidth: 36)
         case .negromante:
             return Unit(team: .enemy, kind: .foe, emoji: "🧛",
-                        spriteName: "foe_negromante", size: 36,
+                        spriteName: "foe_negromante",
+                        tint: SKColor(red: 0.55, green: 0.25, blue: 0.75, alpha: 1),
+                        tintBlend: 0.5, size: 36,
                         hp: 125 * power, damage: 22 * power, damageKind: .magico,
                         vulnerabilities: [.taglio], resistances: [.magico],
                         attackRange: 210, aggroRange: max(aggro, 230),
@@ -334,6 +349,18 @@ enum TowerKind: CaseIterable {
         allCases.filter { $0.introLevel <= level }
     }
 
+    /// Tinta che colora la torre di pietra secondo il tipo.
+    var tint: SKColor? {
+        switch self {
+        case .freccia: return nil
+        case .bomba: return SKColor(red: 0.45, green: 0.45, blue: 0.5, alpha: 1)
+        case .gelo: return SKColor(red: 0.5, green: 0.8, blue: 1, alpha: 1)
+        case .serpe: return SKColor(red: 0.5, green: 0.85, blue: 0.4, alpha: 1)
+        case .fuoco: return SKColor(red: 1, green: 0.45, blue: 0.3, alpha: 1)
+        case .teschio: return SKColor(red: 0.5, green: 0.3, blue: 0.6, alpha: 1)
+        }
+    }
+
     /// Piccola icona sopra la torre che ne indica il tipo.
     var badge: String {
         switch self {
@@ -363,7 +390,8 @@ enum TowerKind: CaseIterable {
         switch self {
         case .freccia:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 400 * power, damage: 15 * power, damageKind: .perforante,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 250, aggroRange: 250,
@@ -371,7 +399,8 @@ enum TowerKind: CaseIterable {
                         traits: CombatTraits(projectileSpeed: 420), barWidth: 52)
         case .bomba:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 460 * power, damage: 22 * power, damageKind: .esplosivo,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 220, aggroRange: 220,
@@ -380,7 +409,8 @@ enum TowerKind: CaseIterable {
                         barWidth: 52)
         case .gelo:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 400 * power, damage: 8 * power, damageKind: .magico,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 230, aggroRange: 230,
@@ -390,7 +420,8 @@ enum TowerKind: CaseIterable {
                         barWidth: 52)
         case .serpe:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 430 * power, damage: 6 * power, damageKind: .magico,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 220, aggroRange: 220,
@@ -400,7 +431,8 @@ enum TowerKind: CaseIterable {
                         barWidth: 52)
         case .fuoco:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 500 * power, damage: 38 * power, damageKind: .magico,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 280, aggroRange: 280,
@@ -408,7 +440,8 @@ enum TowerKind: CaseIterable {
                         traits: CombatTraits(projectileSpeed: 520), barWidth: 52)
         case .teschio:
             return Unit(team: .enemy, kind: .tower, emoji: "🗼",
-                        spriteName: spriteName, badge: badge, size: 54,
+                        spriteName: spriteName, tint: tint, tintBlend: 0.35,
+                        badge: badge, size: 54,
                         hp: 600 * power, damage: 30 * power, damageKind: .esplosivo,
                         vulnerabilities: [.esplosivo], resistances: [.perforante],
                         attackRange: 200, aggroRange: 200,

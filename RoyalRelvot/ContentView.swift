@@ -22,6 +22,9 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.screen)
+        .onAppear {
+            AudioManager.shared.playMusic("music_menu")
+        }
     }
 
     @ViewBuilder

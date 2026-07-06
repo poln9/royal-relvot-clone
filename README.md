@@ -4,10 +4,15 @@ Clone didattico per iOS ispirato alle meccaniche di *Royal Revolt* (tower-defens
 guidi il Re lungo il sentiero, evochi truppe, lanci incantesimi e abbatti il portone
 del castello nemico prima che scada il tempo.
 
-Grafica: sprite pixel-art **CC0** dai pack [Tiny Dungeon](https://kenney.nl/assets/tiny-dungeon)
-e [Tiny Town](https://kenney.nl/assets/tiny-town) di **Kenney.nl** (dominio pubblico,
-nessuna attribuzione richiesta — ma la merita), con fallback automatico a emoji
-per le unità senza sprite. Nessun contenuto protetto da copyright del gioco originale.
+**Grafica:** sprite vettoriali **CC0** dal pack
+[Medieval RTS](https://kenney.nl/assets/medieval-rts) di **Kenney.nl** (dominio
+pubblico), con fallback automatico a emoji. **Audio:** effetti CC0 dai pack
+[RPG Audio](https://kenney.nl/assets/rpg-audio),
+[Impact Sounds](https://kenney.nl/assets/impact-sounds) e
+[Music Jingles](https://kenney.nl/assets/music-jingles) di Kenney;
+musiche *"Master of the Feast"* e *"Five Armies"* di **Kevin MacLeod**
+(incompetech.com), licenza [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Nessun contenuto protetto da copyright del gioco originale.
 
 - **Stack:** Swift 5 · SwiftUI (menu/HUD) · SpriteKit (gameplay)
 - **Target:** iPhone (portrait), iOS 17+ — ottimizzato per iPhone 15 Plus (430×932 pt)

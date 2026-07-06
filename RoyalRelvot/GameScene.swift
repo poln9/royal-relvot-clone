@@ -52,6 +52,11 @@ final class GameScene: SKScene {
 
     private var campPosition: CGPoint { level.road[0] }
 
+    // Effetti sonori: azioni precaricate e throttling per non
+    // sovrapporre decine di suoni identici nello stesso istante.
+    private var soundActions: [String: SKAction] = [:]
+    private var lastSoundAt: [String: TimeInterval] = [:]
+
     /// Parametri di un colpo, catturati al momento dell'attacco così che
     /// il danno resti valido anche se l'attaccante muore nel frattempo.
     private struct HitPayload {
@@ -68,8 +73,8 @@ final class GameScene: SKScene {
         self.elixir = config.elixirMax
         super.init(size: CGSize(width: 430, height: 932))
         scaleMode = .aspectFill
-        // Verde erba della palette Kenney (Tiny Town).
-        backgroundColor = SKColor(red: 132 / 255, green: 198 / 255, blue: 105 / 255, alpha: 1)
+        // Verde prato della palette Kenney Medieval RTS.
+        backgroundColor = SKColor(red: 39 / 255, green: 174 / 255, blue: 96 / 255, alpha: 1)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) non supportato") }
@@ -85,66 +90,20 @@ final class GameScene: SKScene {
     }
 
     private func buildWorld() {
-        let sand = SKColor(red: 234 / 255, green: 165 / 255, blue: 108 / 255, alpha: 1)
-
-        // Corridoi di sabbia percorribili.
-        for rect in level.corridors {
-            let node = SKSpriteNode(color: sand, size: rect.size)
-            node.position = CGPoint(x: rect.midX, y: rect.midY)
-            node.zPosition = 1
-            addChild(node)
-        }
-
-        // Dettagli di sabbia dentro i corridoi.
-        for rect in level.corridors where rect.height > 250 || rect.width > 250 {
-            let count = Int((rect.width * rect.height) / 60000)
-            for _ in 0..<count {
-                let sandDetail = decoNode(sprite: Bool.random() ? "deco_sand1" : "deco_sand2",
-                                          emoji: "", size: 40)
-                sandDetail.position = CGPoint(x: CGFloat.random(in: rect.minX + 25...rect.maxX - 25),
-                                              y: CGFloat.random(in: rect.minY + 25...rect.maxY - 25))
-                sandDetail.zPosition = 1.5
-                addChild(sandDetail)
-            }
-        }
-
-        // Vegetazione sull'erba, evitando i corridoi.
-        let decoSprites = ["deco_tree1", "deco_tree2", "deco_tree3", "deco_tree4",
-                           "deco_mushroom", "deco_grass1", "deco_grass2"]
-        let decoEmoji = ["🌲", "🌳", "🌳", "🌲", "🍄", "🌿", "🌿"]
-        var placed = 0
-        var attempts = 0
-        while placed < 90 && attempts < 400 {
-            attempts += 1
-            let p = CGPoint(x: CGFloat.random(in: -300...300),
-                            y: CGFloat.random(in: -120...(level.length + 80)))
-            if isWalkable(p, margin: 30) { continue }
-            let pick = Int.random(in: 0..<decoSprites.count)
-            let deco = decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
-                                size: pick < 4 ? CGFloat.random(in: 30...46)
-                                               : CGFloat.random(in: 22...30))
-            deco.position = p
-            deco.zPosition = 2
-            addChild(deco)
-            placed += 1
-        }
-
-        // Qualche punto di interesse: pozzo e cartello vicino al campo.
-        let sign = decoNode(sprite: "deco_sign", emoji: "🪧", size: 30)
-        sign.position = CGPoint(x: campPosition.x + 85, y: campPosition.y - 10)
-        sign.zPosition = 2
-        addChild(sign)
-        let well = decoNode(sprite: "deco_well", emoji: "🛢️", size: 34)
-        well.position = CGPoint(x: campPosition.x - 85, y: campPosition.y + 55)
-        well.zPosition = 2
-        addChild(well)
+        buildTerrain()
+        buildScenery()
 
         // Accampamento del giocatore: da qui partono le truppe evocate.
-        let camp = SKLabelNode(text: "⛺")
-        camp.fontSize = 44
-        camp.position = CGPoint(x: campPosition.x - 55, y: campPosition.y - 25)
+        let camp = decoNode(sprite: "camp_player", emoji: "⛺", size: 46)
+        camp.position = CGPoint(x: campPosition.x - 58, y: campPosition.y - 20)
         camp.zPosition = 2
         addChild(camp)
+        let campfire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 22)
+        campfire.position = CGPoint(x: campPosition.x + 62, y: campPosition.y - 15)
+        campfire.zPosition = 2
+        campfire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.35),
+                                               .scale(to: 0.95, duration: 0.35)])))
+        addChild(campfire)
 
         // Portone nemico e mura in cima.
         let gatePos = level.gatePosition
@@ -152,19 +111,24 @@ final class GameScene: SKScene {
         gate.position = gatePos
         add(gate)
         for side: CGFloat in [-1, 1] {
-            let wall = decoNode(sprite: "gatewall", emoji: "", size: 110)
-            wall.position = CGPoint(x: gatePos.x + side * 160, y: gatePos.y + 8)
+            let wall = decoNode(sprite: "gatewall", emoji: "", size: 74)
+            wall.position = CGPoint(x: gatePos.x + side * 155, y: gatePos.y + 4)
             wall.zPosition = 3
             addChild(wall)
         }
 
         // Accampamento nemico (attivo dal livello 4: invia truppe regolarmente).
         if level.enemyCampActive {
-            let enemyCamp = SKLabelNode(text: "⛺")
-            enemyCamp.fontSize = 40
-            enemyCamp.position = CGPoint(x: gatePos.x - 68, y: gatePos.y - 95)
+            let enemyCamp = decoNode(sprite: "camp_enemy", emoji: "⛺", size: 48)
+            enemyCamp.position = CGPoint(x: gatePos.x - 66, y: gatePos.y - 100)
             enemyCamp.zPosition = 2
             addChild(enemyCamp)
+            let fire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 20)
+            fire.position = CGPoint(x: gatePos.x - 20, y: gatePos.y - 118)
+            fire.zPosition = 2
+            fire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.4),
+                                               .scale(to: 0.95, duration: 0.4)])))
+            addChild(fire)
         }
 
         // Torri difensive.
@@ -216,7 +180,6 @@ final class GameScene: SKScene {
     private func decoNode(sprite: String, emoji: String, size: CGFloat) -> SKNode {
         if UIImage(named: sprite) != nil {
             let texture = SKTexture(imageNamed: sprite)
-            texture.filteringMode = .nearest
             let node = SKSpriteNode(texture: texture)
             let maxSide = max(texture.size().width, texture.size().height)
             if maxSide > 0 { node.setScale(size * 1.5 / maxSide) }
@@ -225,6 +188,121 @@ final class GameScene: SKScene {
         let label = SKLabelNode(text: emoji)
         label.fontSize = size
         return label
+    }
+
+    /// Riempie i corridoi con tile di terra battuta (ritagliate al bordo);
+    /// se le texture mancano usa un colore pieno.
+    private func buildTerrain() {
+        let dirtColor = SKColor(red: 187 / 255, green: 128 / 255, blue: 68 / 255, alpha: 1)
+        let hasTiles = UIImage(named: "tile_dirt1") != nil && UIImage(named: "tile_dirt2") != nil
+
+        for rect in level.corridors {
+            guard hasTiles else {
+                let node = SKSpriteNode(color: dirtColor, size: rect.size)
+                node.position = CGPoint(x: rect.midX, y: rect.midY)
+                node.zPosition = 1
+                addChild(node)
+                continue
+            }
+            let crop = SKCropNode()
+            crop.position = CGPoint(x: rect.midX, y: rect.midY)
+            crop.maskNode = SKSpriteNode(color: .white, size: rect.size)
+            crop.zPosition = 1
+            let tileSize: CGFloat = 70
+            let cols = Int(ceil(rect.width / tileSize))
+            let rows = Int(ceil(rect.height / tileSize))
+            for r in 0..<rows {
+                for c in 0..<cols {
+                    let texture = SKTexture(imageNamed: (r + c) % 2 == 0 ? "tile_dirt1" : "tile_dirt2")
+                    let tile = SKSpriteNode(texture: texture)
+                    tile.size = CGSize(width: tileSize, height: tileSize)
+                    tile.position = CGPoint(x: -rect.width / 2 + (CGFloat(c) + 0.5) * tileSize,
+                                            y: -rect.height / 2 + (CGFloat(r) + 0.5) * tileSize)
+                    crop.addChild(tile)
+                }
+            }
+            addChild(crop)
+        }
+    }
+
+    /// Punto casuale sull'erba, ad almeno `margin` punti dai corridoi.
+    private func randomGrassPoint(margin: CGFloat, attempts: Int = 30) -> CGPoint? {
+        for _ in 0..<attempts {
+            let p = CGPoint(x: CGFloat.random(in: -300...300),
+                            y: CGFloat.random(in: -120...(level.length + 80)))
+            // Margine negativo = corridoio espanso: il punto deve restarne fuori.
+            if !isWalkable(p, margin: -margin) { return p }
+        }
+        return nil
+    }
+
+    /// Arricchisce l'erba: laghetti, boschi, villaggi con fattorie,
+    /// alberi, cespugli, rocce.
+    private func buildScenery() {
+        // Laghetti (ellissi color acqua della palette).
+        for _ in 0..<(3 + Int(level.length / 1400)) {
+            guard let p = randomGrassPoint(margin: 85) else { continue }
+            let w = CGFloat.random(in: 90...160)
+            let h = w * CGFloat.random(in: 0.55...0.75)
+            let pond = SKShapeNode(ellipseOf: CGSize(width: w, height: h))
+            pond.fillColor = SKColor(red: 176 / 255, green: 233 / 255, blue: 252 / 255, alpha: 1)
+            pond.strokeColor = SKColor(white: 1, alpha: 0.75)
+            pond.lineWidth = 4
+            pond.position = p
+            pond.zPosition = 0.5
+            addChild(pond)
+        }
+
+        // Macchie di bosco e cespugli (tile con fondo erba).
+        let patchNames = ["tile_forest1", "tile_forest2", "tile_forest3", "tile_bushes"]
+        for _ in 0..<(5 + Int(level.length / 900)) {
+            guard let p = randomGrassPoint(margin: 90) else { continue }
+            let patch = decoNode(sprite: patchNames[Int.random(in: 0..<patchNames.count)],
+                                 emoji: "🌲", size: CGFloat.random(in: 70...110))
+            patch.position = p
+            patch.zPosition = 0.6
+            addChild(patch)
+        }
+
+        // Villaggi: casa + campo coltivato + fienile o mercato.
+        let houseNames = ["deco_house1", "deco_house2", "deco_house3", "deco_house4"]
+        let farmNames = ["tile_farm1", "tile_farm2", "tile_farm3", "tile_farm4"]
+        for v in 0..<(2 + Int(level.length / 2200)) {
+            guard let p = randomGrassPoint(margin: 110) else { continue }
+            let house = decoNode(sprite: houseNames[v % houseNames.count],
+                                 emoji: "🏠", size: 52)
+            house.position = p
+            house.zPosition = 2
+            addChild(house)
+            let farm = decoNode(sprite: farmNames[v % farmNames.count],
+                                emoji: "🌾", size: 56)
+            farm.position = CGPoint(x: p.x + CGFloat.random(in: -70 ... -50),
+                                    y: p.y + CGFloat.random(in: -20...20))
+            farm.zPosition = 0.8
+            addChild(farm)
+            let extra = decoNode(sprite: v % 2 == 0 ? "deco_barn" : "deco_market",
+                                 emoji: "🏚️", size: 44)
+            extra.position = CGPoint(x: p.x + CGFloat.random(in: 48...66),
+                                     y: p.y + CGFloat.random(in: -26...26))
+            extra.zPosition = 2
+            addChild(extra)
+        }
+
+        // Vegetazione e rocce sparse.
+        let decoSprites = ["deco_tree1", "deco_tree2", "deco_tree3", "deco_tree4",
+                           "deco_bush1", "deco_bush2", "deco_stump",
+                           "deco_rock1", "deco_rock2", "deco_rock3"]
+        let decoEmoji = ["🌳", "🌳", "🌲", "🌲", "🌿", "🌿", "🪵", "🪨", "🪨", "🪨"]
+        for _ in 0..<80 {
+            guard let p = randomGrassPoint(margin: 26, attempts: 6) else { continue }
+            let pick = Int.random(in: 0..<decoSprites.count)
+            let deco = decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
+                                size: pick < 4 ? CGFloat.random(in: 30...48)
+                                               : CGFloat.random(in: 20...32))
+            deco.position = p
+            deco.zPosition = 2
+            addChild(deco)
+        }
     }
 
     // MARK: - Terreno percorribile
@@ -507,9 +585,15 @@ final class GameScene: SKScene {
             return
         }
         if unit.traits.projectileSpeed > 0 {
+            switch unit.damageKind {
+            case .perforante: playSound("sfx_arrow")
+            case .magico: playSound("sfx_magic")
+            default: break
+            }
             fireProjectile(payload, from: unit, to: target)
         } else {
             unit.lunge(toward: target.position)
+            playSound("sfx_melee")
             applyHit(payload, to: target)
         }
     }
@@ -655,6 +739,7 @@ final class GameScene: SKScene {
     private func deal(_ amount: CGFloat, to target: Unit, flash: Bool = true) {
         guard target.applyDamage(amount, flash: flash) else { return }
         // Il bersaglio è morto.
+        playSound(target.isStatic ? "sfx_structure" : "sfx_death", throttle: 0.12)
         units.removeAll { $0 === target }
         target.run(.sequence([.group([.fadeOut(withDuration: 0.3),
                                       .scale(to: 0.3, duration: 0.3)]),
@@ -702,6 +787,7 @@ final class GameScene: SKScene {
     func castHeal() {
         guard !isGameOver, elapsed >= healReadyAt else { return }
         healReadyAt = elapsed + healCooldown
+        playSound("sfx_heal")
         for unit in units where unit.team == .player && unit.isAlive {
             unit.heal(unit.maxHP * config.healFraction)
         }
@@ -725,6 +811,7 @@ final class GameScene: SKScene {
         let troop = loadout[slot]
         guard elixir >= CGFloat(troop.elixirCost) else { return }
         elixir -= CGFloat(troop.elixirCost)
+        playSound("sfx_summon")
         for _ in 0..<troop.squadSize {
             let unit = troop.makeUnit()
             unit.position = CGPoint(x: campPosition.x + CGFloat.random(in: -50...50),
@@ -736,9 +823,24 @@ final class GameScene: SKScene {
         pushHUD()
     }
 
+    // MARK: - Suoni
+
+    private func playSound(_ name: String, throttle: TimeInterval = 0.09) {
+        if let last = lastSoundAt[name], elapsed - last < throttle { return }
+        if soundActions[name] == nil {
+            guard Bundle.main.url(forResource: name, withExtension: "wav") != nil else { return }
+            soundActions[name] = SKAction.playSoundFileNamed("\(name).wav",
+                                                             waitForCompletion: false)
+        }
+        guard let action = soundActions[name] else { return }
+        lastSoundAt[name] = elapsed
+        run(action)
+    }
+
     // MARK: - Effetti visivi
 
     private func showExplosion(at point: CGPoint, radius: CGFloat) {
+        playSound("sfx_explosion", throttle: 0.15)
         let blast = SKShapeNode(circleOfRadius: radius)
         blast.fillColor = SKColor(red: 1, green: 0.5, blue: 0.1, alpha: 0.45)
         blast.strokeColor = SKColor(red: 1, green: 0.3, blue: 0, alpha: 0.9)

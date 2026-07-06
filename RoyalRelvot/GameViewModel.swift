@@ -104,6 +104,8 @@ final class GameViewModel: ObservableObject {
         }
         scene.onGameOver = { [weak self] victory in
             guard let self else { return }
+            AudioManager.shared.stopMusic()
+            AudioManager.shared.playJingle(victory ? "jingle_win" : "jingle_lose")
             if victory {
                 // Prima vittoria su questo livello = ricompensa piena.
                 let firstTime = index >= self.unlockedLevel
@@ -123,6 +125,7 @@ final class GameViewModel: ObservableObject {
         }
         self.scene = scene
         screen = .playing
+        AudioManager.shared.playMusic("music_battle")
     }
 
     func nextLevel() { startLevel(currentLevel + 1, loadout: loadout) }
@@ -132,6 +135,7 @@ final class GameViewModel: ObservableObject {
         scene?.isPaused = true
         scene = nil
         screen = .menu
+        AudioManager.shared.playMusic("music_menu")
     }
 
     // MARK: - Comandi di gioco
