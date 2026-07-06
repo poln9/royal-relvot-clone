@@ -4,9 +4,11 @@ Clone didattico per iOS ispirato alle meccaniche di *Royal Revolt* (tower-defens
 guidi il Re lungo il sentiero, evochi truppe, lanci incantesimi e abbatti il portone
 del castello nemico prima che scada il tempo.
 
-**Grafica:** sprite vettoriali **CC0** dal pack
-[Medieval RTS](https://kenney.nl/assets/medieval-rts) di **Kenney.nl** (dominio
-pubblico), con fallback automatico a emoji. **Audio:** effetti CC0 dai pack
+**Grafica:** personaggi ed edifici **animati a frame** dal pack **CC0**
+[Tiny Swords](https://pixelfrog-assets.itch.io/tiny-swords) di **Pixel Frog**
+(idle, corsa, attacco, esplosioni, alberi che ondeggiano), più elementi
+vettoriali dal pack CC0 [Medieval RTS](https://kenney.nl/assets/medieval-rts)
+di **Kenney.nl**; fallback automatico a emoji. **Audio:** effetti CC0 dai pack
 [RPG Audio](https://kenney.nl/assets/rpg-audio),
 [Impact Sounds](https://kenney.nl/assets/impact-sounds) e
 [Music Jingles](https://kenney.nl/assets/music-jingles) di Kenney;

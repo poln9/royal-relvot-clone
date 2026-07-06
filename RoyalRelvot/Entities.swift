@@ -85,6 +85,13 @@ final class Unit: SKNode {
 
     private let body: SKNode
     private var bodyBaseScale: CGFloat = 1
+
+    // Animazioni a frame (pack Tiny Swords): se presenti sostituiscono
+    // lo sprite statico e le animazioni procedurali.
+    private var idleFrames: [SKTexture] = []
+    private var runFrames: [SKTexture] = []
+    private var attackFrames: [SKTexture] = []
+    private var isAnimated: Bool { !idleFrames.isEmpty }
     private let statusLabel = SKLabelNode()
     private let barBack: SKSpriteNode
     private let barFill: SKSpriteNode
@@ -94,6 +101,7 @@ final class Unit: SKNode {
          kind: UnitKind,
          emoji: String,
          spriteName: String? = nil,
+         animBase: String? = nil,
          tint: SKColor? = nil,
          tintBlend: CGFloat = 0.45,
          badge: String? = nil,
@@ -129,10 +137,23 @@ final class Unit: SKNode {
         self.barFill = SKSpriteNode(color: team == .player ? .green : .red,
                                     size: CGSize(width: barWidth - 2, height: 4))
 
-        // Sprite se disponibile nel bundle, altrimenti fallback emoji.
-        // La tinta differenzia le varianti della stessa figura base
-        // (es. piromante arancio e gelomante ciano dallo stesso mago).
-        if let spriteName, UIImage(named: spriteName) != nil {
+        // Priorità: animazione a frame → sprite statico → emoji.
+        // La tinta differenzia le varianti della stessa figura base.
+        let loadedIdle = animBase.map { Unit.loadFrames($0, "idle") } ?? []
+        if let animBase, !loadedIdle.isEmpty {
+            self.idleFrames = loadedIdle
+            self.runFrames = Unit.loadFrames(animBase, "run")
+            self.attackFrames = Unit.loadFrames(animBase, "attack")
+            let sprite = SKSpriteNode(texture: loadedIdle[0])
+            // Le celle Tiny Swords sono 192px con molto margine trasparente:
+            // il fattore 2.5 rende il personaggio visivamente ~"size" punti.
+            sprite.setScale(size * 2.5 / 192)
+            if let tint {
+                sprite.color = tint
+                sprite.colorBlendFactor = tintBlend
+            }
+            self.body = sprite
+        } else if let spriteName, UIImage(named: spriteName) != nil {
             let texture = SKTexture(imageNamed: spriteName)
             let sprite = SKSpriteNode(texture: texture)
             let maxSide = max(texture.size().width, texture.size().height)
@@ -166,6 +187,7 @@ final class Unit: SKNode {
 
         addChild(body)
         bodyBaseScale = body.xScale
+        if isAnimated { applyLocomotionAnimation() }
 
         if let badge {
             let badgeLabel = SKLabelNode(text: badge)
@@ -226,10 +248,38 @@ final class Unit: SKNode {
 
     private var isWalking = false
 
-    /// Animazione di camminata: dondolio + passo molleggiato.
+    /// Carica i frame `<base>_<anim>_0.png`, `_1`… finché esistono nel bundle.
+    static func loadFrames(_ base: String, _ anim: String) -> [SKTexture] {
+        var frames: [SKTexture] = []
+        var i = 0
+        while i < 12, UIImage(named: "\(base)_\(anim)_\(i)") != nil {
+            frames.append(SKTexture(imageNamed: "\(base)_\(anim)_\(i)"))
+            i += 1
+        }
+        return frames
+    }
+
+    /// Riprende il ciclo idle/corsa in base allo stato corrente.
+    private func applyLocomotionAnimation() {
+        let frames = isWalking && !runFrames.isEmpty ? runFrames : idleFrames
+        guard !frames.isEmpty else { return }
+        body.removeAction(forKey: "anim")
+        body.run(.repeatForever(.animate(with: frames,
+                                         timePerFrame: isWalking ? 0.09 : 0.14)),
+                 withKey: "anim")
+    }
+
+    /// Animazione di camminata: frame di corsa se disponibili,
+    /// altrimenti dondolio procedurale.
     func setWalking(_ walking: Bool) {
         guard walking != isWalking else { return }
         isWalking = walking
+        if isAnimated {
+            // Non interrompe un attacco in corso: riprenderà da solo.
+            guard body.action(forKey: "attackAnim") == nil else { return }
+            applyLocomotionAnimation()
+            return
+        }
         if walking {
             let wobble = SKAction.repeatForever(.sequence([
                 .group([.rotate(toAngle: 0.08, duration: 0.13),
@@ -243,6 +293,21 @@ final class Unit: SKNode {
             body.removeAction(forKey: "walk")
             body.zRotation = 0
             body.yScale = abs(bodyBaseScale)
+        }
+    }
+
+    /// Attacco rivolto verso un punto: frame di attacco se disponibili
+    /// (spada, arco, torcia…), altrimenti l'affondo procedurale.
+    func playAttack(toward point: CGPoint) {
+        face(dx: point.x - position.x)
+        if isAnimated, !attackFrames.isEmpty {
+            body.removeAction(forKey: "anim")
+            body.removeAction(forKey: "attackAnim")
+            body.run(.sequence([.animate(with: attackFrames, timePerFrame: 0.06),
+                                .run { [weak self] in self?.applyLocomotionAnimation() }]),
+                     withKey: "attackAnim")
+        } else {
+            lunge(toward: point)
         }
     }
 
@@ -291,7 +356,8 @@ final class Unit: SKNode {
     /// Raggio corto: attacca solo ciò che è davvero adiacente e non
     /// insegue mai — il movimento resta sempre in mano al giocatore.
     static func hero(hp: CGFloat, damage: CGFloat) -> Unit {
-        Unit(team: .player, kind: .hero, emoji: "🤴", spriteName: "hero", size: 44,
+        Unit(team: .player, kind: .hero, emoji: "🤴", spriteName: "hero",
+             animBase: "warrior_yellow", size: 46,
              hp: hp, damage: damage, damageKind: .taglio,
              attackRange: 62, aggroRange: 62,
              moveSpeed: 270, attackInterval: 0.55, barWidth: 46)

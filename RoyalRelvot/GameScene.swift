@@ -57,6 +57,11 @@ final class GameScene: SKScene {
     private var soundActions: [String: SKAction] = [:]
     private var lastSoundAt: [String: TimeInterval] = [:]
 
+    // Frame degli effetti (esplosione, fuoco, alberi), caricati una volta.
+    private lazy var explosionFrames = Unit.loadFrames("fx_explosion", "f")
+    private lazy var fireFrames = Unit.loadFrames("fx_fire", "f")
+    private lazy var treeFrames = Unit.loadFrames("ts_tree", "f")
+
     /// Parametri di un colpo, catturati al momento dell'attacco così che
     /// il danno resti valido anche se l'attaccante muore nel frattempo.
     private struct HitPayload {
@@ -73,8 +78,8 @@ final class GameScene: SKScene {
         self.elixir = config.elixirMax
         super.init(size: CGSize(width: 430, height: 932))
         scaleMode = .aspectFill
-        // Verde prato della palette Kenney Medieval RTS.
-        backgroundColor = SKColor(red: 39 / 255, green: 174 / 255, blue: 96 / 255, alpha: 1)
+        // Verde prato della palette Tiny Swords.
+        backgroundColor = SKColor(red: 121 / 255, green: 168 / 255, blue: 99 / 255, alpha: 1)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) non supportato") }
@@ -98,11 +103,9 @@ final class GameScene: SKScene {
         camp.position = CGPoint(x: campPosition.x - 58, y: campPosition.y - 20)
         camp.zPosition = depthZ(camp.position.y)
         addChild(camp)
-        let campfire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 22)
+        let campfire = fireNode(size: 26)
         campfire.position = CGPoint(x: campPosition.x + 62, y: campPosition.y - 15)
         campfire.zPosition = depthZ(campfire.position.y)
-        campfire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.35),
-                                               .scale(to: 0.95, duration: 0.35)])))
         addChild(campfire)
 
         // Portone nemico e mura in cima.
@@ -110,12 +113,7 @@ final class GameScene: SKScene {
         gate = Unit.gate(hp: level.gateHP)
         gate.position = gatePos
         add(gate)
-        for side: CGFloat in [-1, 1] {
-            let wall = decoNode(sprite: "gatewall", emoji: "", size: 74)
-            wall.position = CGPoint(x: gatePos.x + side * 155, y: gatePos.y + 4)
-            wall.zPosition = depthZ(wall.position.y)
-            addChild(wall)
-        }
+        // (il castello Tiny Swords è già ampio: niente mura laterali)
 
         // Accampamento nemico (attivo dal livello 4: invia truppe regolarmente).
         if level.enemyCampActive {
@@ -123,11 +121,9 @@ final class GameScene: SKScene {
             enemyCamp.position = CGPoint(x: gatePos.x - 66, y: gatePos.y - 100)
             enemyCamp.zPosition = depthZ(enemyCamp.position.y)
             addChild(enemyCamp)
-            let fire = decoNode(sprite: "deco_fire", emoji: "🔥", size: 20)
+            let fire = fireNode(size: 24)
             fire.position = CGPoint(x: gatePos.x - 20, y: gatePos.y - 118)
             fire.zPosition = depthZ(fire.position.y)
-            fire.run(.repeatForever(.sequence([.scale(to: 1.15, duration: 0.4),
-                                               .scale(to: 0.95, duration: 0.4)])))
             addChild(fire)
         }
 
@@ -181,6 +177,31 @@ final class GameScene: SKScene {
     /// e personaggi si coprono correttamente a vicenda.
     private func depthZ(_ y: CGFloat) -> CGFloat {
         10 + (level.length - y) * 0.0012
+    }
+
+    /// Falò animato a frame (con fallback emoji).
+    private func fireNode(size: CGFloat) -> SKNode {
+        guard !fireFrames.isEmpty else {
+            let label = SKLabelNode(text: "🔥")
+            label.fontSize = size
+            return label
+        }
+        let node = SKSpriteNode(texture: fireFrames[0])
+        node.setScale(size * 2.0 / 128)
+        node.run(.repeatForever(.animate(with: fireFrames, timePerFrame: 0.1)))
+        return node
+    }
+
+    /// Albero che ondeggia (frame Tiny Swords), con fallback statico.
+    private func treeNode(size: CGFloat) -> SKNode {
+        guard !treeFrames.isEmpty else {
+            return decoNode(sprite: "deco_tree1", emoji: "🌲", size: size)
+        }
+        let node = SKSpriteNode(texture: treeFrames[0])
+        node.setScale(size * 2.2 / 192)
+        node.run(.repeatForever(.animate(with: treeFrames,
+                                         timePerFrame: TimeInterval.random(in: 0.18...0.3))))
+        return node
     }
 
     /// Nodo decorativo: sprite se disponibile nel bundle, altrimenti emoji.
@@ -303,9 +324,11 @@ final class GameScene: SKScene {
         for _ in 0..<80 {
             guard let p = randomGrassPoint(margin: 26, attempts: 6) else { continue }
             let pick = Int.random(in: 0..<decoSprites.count)
-            let deco = decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
-                                size: pick < 4 ? CGFloat.random(in: 30...48)
-                                               : CGFloat.random(in: 20...32))
+            // Gli alberi ondeggiano con i frame Tiny Swords.
+            let deco = pick < 4
+                ? treeNode(size: CGFloat.random(in: 30...48))
+                : decoNode(sprite: decoSprites[pick], emoji: decoEmoji[pick],
+                           size: CGFloat.random(in: 20...32))
             deco.position = p
             deco.zPosition = depthZ(p.y)
             addChild(deco)
@@ -639,7 +662,6 @@ final class GameScene: SKScene {
 
     private func performAttack(_ unit: Unit, on target: Unit) {
         unit.attackCooldown = unit.attackInterval
-        unit.face(dx: target.position.x - unit.position.x)
         let payload = HitPayload(team: unit.team, damage: unit.damage,
                                  damageKind: unit.damageKind, traits: unit.traits)
 
@@ -649,6 +671,8 @@ final class GameScene: SKScene {
             kill(unit)
             return
         }
+        // Frame di attacco (spada, arco, torcia…) o affondo procedurale.
+        unit.playAttack(toward: target.position)
         if unit.traits.projectileSpeed > 0 {
             switch unit.damageKind {
             case .perforante: playSound("sfx_arrow")
@@ -657,7 +681,6 @@ final class GameScene: SKScene {
             }
             fireProjectile(payload, from: unit, to: target)
         } else {
-            unit.lunge(toward: target.position)
             playSound("sfx_melee")
             applyHit(payload, to: target)
         }
@@ -685,13 +708,13 @@ final class GameScene: SKScene {
         }
         switch payload.damageKind {
         case .perforante:
-            // Freccia (sprite Kenney orientata a 45°) ruotata verso il bersaglio.
+            // Freccia (sprite Tiny Swords, che punta in alto) ruotata
+            // verso il bersaglio.
             if UIImage(named: "proj_arrow") != nil {
                 let texture = SKTexture(imageNamed: "proj_arrow")
-                texture.filteringMode = .nearest
                 let arrow = SKSpriteNode(texture: texture)
-                arrow.setScale(28 / max(texture.size().width, texture.size().height))
-                arrow.zRotation = angle - .pi / 4
+                arrow.setScale(34 / max(texture.size().width, texture.size().height))
+                arrow.zRotation = angle - .pi / 2
                 return arrow
             }
             let bolt = SKShapeNode(rectOf: CGSize(width: 16, height: 3), cornerRadius: 1.5)
@@ -904,6 +927,17 @@ final class GameScene: SKScene {
 
     private func showExplosion(at point: CGPoint, radius: CGFloat) {
         playSound("sfx_explosion", throttle: 0.15)
+        // Esplosione a frame (Tiny Swords) se disponibile.
+        if !explosionFrames.isEmpty {
+            let node = SKSpriteNode(texture: explosionFrames[0])
+            node.position = point
+            node.zPosition = 41
+            node.setScale(radius * 2.4 / 192)
+            addChild(node)
+            node.run(.sequence([.animate(with: explosionFrames, timePerFrame: 0.05),
+                                .removeFromParent()]))
+            return
+        }
         let blast = SKShapeNode(circleOfRadius: radius)
         blast.fillColor = SKColor(red: 1, green: 0.5, blue: 0.1, alpha: 0.45)
         blast.strokeColor = SKColor(red: 1, green: 0.3, blue: 0, alpha: 0.9)
